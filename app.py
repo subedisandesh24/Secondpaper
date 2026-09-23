@@ -11,14 +11,16 @@ from groq import Groq
 from PIL import Image
 import io
 
-# ReportLab imports for High-Grade PDF Publishing
+# ReportLab imports for Clean PDF Generation
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak, Table, TableStyle, KeepTogether
+    SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak, Table, TableStyle
 )
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # Constant for triple backticks to avoid markdown copy truncation
 TRIPLE_BACKTICKS = chr(96) * 3
@@ -51,10 +53,77 @@ if "saved_notes" not in st.session_state:
     st.session_state["saved_notes"] = load_saved_notes()
 
 # -------------------------------------------------------------
-# TWO-PASS NUMBERED CANVAS (PAGE X OF Y + RUNNING HEADERS)
+# DYNAMIC UNICODE FONT LOADER & ARTIFACT CLEANER (NO '???')
 # -------------------------------------------------------------
-class LokSewaNumberedCanvas(canvas.Canvas):
-    """Dynamically calculates total page count and prints running headers/footers."""
+PDF_FONT = 'Helvetica'
+PDF_FONT_BOLD = 'Helvetica-Bold'
+
+def setup_pdf_font():
+    """Tries to register a system TrueType font if available on the OS."""
+    global PDF_FONT, PDF_FONT_BOLD
+    system_font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf"
+    ]
+    for p in system_font_paths:
+        if os.path.exists(p):
+            try:
+                pdfmetrics.registerFont(TTFont('AppUnicodeFont', p))
+                PDF_FONT = 'AppUnicodeFont'
+                PDF_FONT_BOLD = 'AppUnicodeFont'
+                return
+            except Exception:
+                pass
+
+setup_pdf_font()
+
+def clean_pdf_text(raw_text: str) -> str:
+    """
+    Cleans Unicode punctuation, emojis, quotes, and symbols so they NEVER turn into '???'.
+    """
+    if not raw_text:
+        return ""
+
+    text = raw_text
+
+    # 1. Map Unicode dashes to clean ASCII hyphens
+    text = text.replace('—', ' - ').replace('–', ' - ').replace('―', ' - ')
+
+    # 2. Map curly quotes to straight quotes
+    text = text.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
+
+    # 3. Map arrows and math signs to clean text
+    text = text.replace('→', ' -> ').replace('←', ' <- ').replace('↑', ' (up) ').replace('↓', ' (down) ')
+    text = text.replace('≥', '>=').replace('≤', '<=').replace('≠', '!=').replace('≈', '~')
+
+    # 4. Remove emojis that break Latin-1 fonts
+    text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
+    text = re.sub(r'[📖🌾📌📝⭐🚀🔍📋📚🎉&bull;•]', '', text)
+
+    # 5. Clean non-breaking spaces
+    text = text.replace('\u00a0', ' ').replace('\u200b', '')
+
+    # 6. Escape HTML characters for ReportLab paraparser
+    escaped = html.escape(text)
+
+    # 7. Convert markdown bold and italic tags
+    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+    escaped = escaped.replace("-&gt;", " &rarr; ")
+
+    # 8. Encode safely without producing '?' artifacts
+    if PDF_FONT == 'Helvetica':
+        return escaped.encode('latin-1', 'ignore').decode('latin-1')
+    return escaped
+
+# -------------------------------------------------------------
+# TWO-PASS NUMBERED CANVAS (PAGE X OF Y + CLEAN HEADER)
+# -------------------------------------------------------------
+class CleanNumberedCanvas(canvas.Canvas):
+    """Prints running headers and page numbers on every page without '???'."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._saved_page_states = []
@@ -67,22 +136,17 @@ class LokSewaNumberedCanvas(canvas.Canvas):
         num_pages = len(self._saved_page_states)
         for state in self._saved_page_states:
             self.__dict__.update(state)
-            self.draw_decorations(num_pages)
+            self.draw_page_decorations(num_pages)
             super().showPage()
         super().save()
 
-    def draw_decorations(self, page_count):
+    def draw_page_decorations(self, page_count):
         self.saveState()
-        # Suppress headers/footers on cover/first page if multi-page dossier
-        if self._pageNumber == 1 and page_count > 1:
-            self.restoreState()
-            return
-            
-        self.setFont("Helvetica-Bold", 7.5)
+        self.setFont(PDF_FONT_BOLD, 8)
         self.setFillColor(colors.HexColor('#1b5e20'))
-        self.drawString(40, 810, "PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) — NEPAL")
+        self.drawString(40, 810, "PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL")
         
-        self.setFont("Helvetica", 7.5)
+        self.setFont(PDF_FONT, 8)
         self.setFillColor(colors.HexColor('#555555'))
         self.drawRightString(555, 810, "Nepal Agricultural Service | Gazetted 3rd Class")
         
@@ -90,71 +154,60 @@ class LokSewaNumberedCanvas(canvas.Canvas):
         self.setLineWidth(1)
         self.line(40, 804, 555, 804)
 
-        # Footer
-        self.setStrokeColor(colors.HexColor('#cccccc'))
+        # Clean Footer
+        self.setStrokeColor(colors.HexColor('#cbd5e1'))
         self.setLineWidth(0.5)
-        self.line(40, 42, 555, 42)
+        self.line(40, 40, 555, 40)
         
-        self.setFont("Helvetica", 7.5)
-        self.setFillColor(colors.HexColor('#777777'))
-        self.drawString(40, 30, "Confidential Exam Revision Dossier | Verified Post-2024 Standards")
-        self.drawRightString(555, 30, f"Page {self._pageNumber} of {page_count}")
+        self.setFont(PDF_FONT, 7.5)
+        self.setFillColor(colors.HexColor('#64748b'))
+        self.drawString(40, 28, "Model Question Answers | Strict Exam Orientation")
+        self.drawRightString(555, 28, f"Page {self._pageNumber} of {page_count}")
         self.restoreState()
 
 # -------------------------------------------------------------
-# ADVANCED PDF FORMATTER (READ-FRIENDLY & INTERESTING)
+# CLEAN QUESTION-ANSWER PDF BUILDER (NO INDEX / NO FLUFF)
 # -------------------------------------------------------------
-def safe_pdf_text(raw_text: str) -> str:
-    """Escapes raw XML/HTML characters (<, >, &) to prevent paraparser crashes."""
-    if not raw_text:
-        return ""
-    escaped = html.escape(raw_text)
-    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
-    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
-    escaped = escaped.replace("-&gt;", " &rarr; ")
-    return escaped.encode("latin-1", "replace").decode("latin-1")
-
 def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
-    """Converts an answer into a styled, reader-friendly document section."""
+    """Builds a styled, readable Q&A block without '???' artifacts."""
     styles = getSampleStyleSheet()
-    content_width = 515  # 595 - 80 margins
+    content_width = 515
 
-    # Typography styles
     q_badge_style = ParagraphStyle(
-        f'QBadge_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=11, textColor=colors.HexColor('#0d47a1')
+        f'QBadge_{q_num}', parent=styles['Normal'], fontName=PDF_FONT_BOLD, fontSize=8, leading=11, textColor=colors.HexColor('#0d47a1')
     )
     q_title_style = ParagraphStyle(
-        f'QTitle_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10.5, leading=15, textColor=colors.HexColor('#0f172a')
+        f'QTitle_{q_num}', parent=styles['Normal'], fontName=PDF_FONT_BOLD, fontSize=10, leading=14, textColor=colors.HexColor('#0f172a')
     )
     h1_style = ParagraphStyle(
-        f'H1_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#1b5e20'), spaceBefore=8, spaceAfter=4
+        f'H1_{q_num}', parent=styles['Normal'], fontName=PDF_FONT_BOLD, fontSize=9.5, leading=13, textColor=colors.HexColor('#1b5e20'), spaceBefore=8, spaceAfter=4
     )
     body_style = ParagraphStyle(
-        f'Body_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12.5, textColor=colors.HexColor('#1f2937'), spaceAfter=3.5
+        f'Body_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=8.5, leading=12.5, textColor=colors.HexColor('#1f2937'), spaceAfter=3.5
     )
     bullet_style = ParagraphStyle(
-        f'Bullet_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12.5, leftIndent=12, spaceAfter=2.5
+        f'Bullet_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=8.5, leading=12.5, leftIndent=12, spaceAfter=2.5
     )
     story_text_style = ParagraphStyle(
-        f'StoryTxt_{q_num}', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8.5, leading=13, textColor=colors.HexColor('#78350f')
+        f'StoryTxt_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=8.5, leading=13, textColor=colors.HexColor('#78350f')
     )
     flow_step_style = ParagraphStyle(
-        f'FlowTxt_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11.5, textColor=colors.HexColor('#14532d')
+        f'FlowTxt_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=8, leading=11.5, textColor=colors.HexColor('#14532d')
     )
     tbl_hdr_style = ParagraphStyle(
-        f'TblHdr_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.white, alignment=1
+        f'TblHdr_{q_num}', parent=styles['Normal'], fontName=PDF_FONT_BOLD, fontSize=8, leading=10, textColor=colors.white, alignment=1
     )
     tbl_cell_style = ParagraphStyle(
-        f'TblCell_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10.5, textColor=colors.HexColor('#1f2937')
+        f'TblCell_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=8, leading=10.5, textColor=colors.HexColor('#1f2937')
     )
 
     story = []
 
-    # 1. QUESTION HEADER CARD (NAVY & ICE-BLUE)
-    q_prefix = f"QUESTION {q_num:02d}" if q_num else "QUESTION"
+    # 1. QUESTION BANNER CARD
+    q_prefix = f"QUESTION #{q_num:02d}" if q_num else "QUESTION"
     card_data = [
         [Paragraph(f"<b>{q_prefix} &nbsp;|&nbsp; WEIGHTAGE: {marks} MARKS</b>", q_badge_style)],
-        [Paragraph(safe_pdf_text(question), q_title_style)]
+        [Paragraph(clean_pdf_text(question), q_title_style)]
     ]
     q_card = Table(card_data, colWidths=[content_width])
     q_card.setStyle(TableStyle([
@@ -189,19 +242,18 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             continue
         elif in_mermaid and TRIPLE_BACKTICKS in line:
             in_mermaid = False
-            # Render a stepped visual process card
             flow_flowables = [
-                Paragraph("<b>PROCESS FLOW & LOGICAL MECHANISM:</b>", ParagraphStyle('FTitle', fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4))
+                Paragraph("<b>PROCESS FLOW & LOGICAL MECHANISM:</b>", ParagraphStyle('FTitle', fontName=PDF_FONT_BOLD, fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4))
             ]
             step_idx = 1
             for m_line in mermaid_lines:
-                clean_step = m_line.replace("-->", " &rarr; ").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' ').strip()
+                clean_step = m_line.replace("-->", " -> ").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' ').strip()
                 if clean_step and not clean_step.lower().startswith(('graph', 'flowchart', 'subgraph', 'end')):
-                    flow_flowables.append(Paragraph(f"<b>[Step {step_idx:02d}]</b> {safe_pdf_text(clean_step)}", flow_step_style))
-                    flow_flowables.append(Paragraph("&nbsp;&nbsp;&nbsp;&nbsp;&darr;", ParagraphStyle('Arr', fontName='Helvetica-Bold', fontSize=7.5, textColor=colors.HexColor('#16a34a'))))
+                    flow_flowables.append(Paragraph(f"<b>[Step {step_idx:02d}]</b> {clean_pdf_text(clean_step)}", flow_step_style))
+                    flow_flowables.append(Paragraph("&nbsp;&nbsp;&nbsp;&nbsp;&darr;", ParagraphStyle('Arr', fontName=PDF_FONT_BOLD, fontSize=7.5, textColor=colors.HexColor('#16a34a'))))
                     step_idx += 1
             if len(flow_flowables) > 2:
-                flow_flowables.pop()  # Remove trailing arrow
+                flow_flowables.pop()
                 
             flow_card = Table([[flow_flowables]], colWidths=[content_width])
             flow_card.setStyle(TableStyle([
@@ -227,16 +279,15 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             continue
         elif in_table:
             if table_rows:
-                # Convert collected rows to styled table
                 col_w = content_width / len(table_rows[0])
                 t_data = []
                 for r_idx, row in enumerate(table_rows):
                     p_row = []
                     for c_txt in row:
                         if r_idx == 0:
-                            p_row.append(Paragraph(f"<b>{safe_pdf_text(c_txt)}</b>", tbl_hdr_style))
+                            p_row.append(Paragraph(f"<b>{clean_pdf_text(c_txt)}</b>", tbl_hdr_style))
                         else:
-                            p_row.append(Paragraph(safe_pdf_text(c_txt), tbl_cell_style))
+                            p_row.append(Paragraph(clean_pdf_text(c_txt), tbl_cell_style))
                     t_data.append(p_row)
                     
                 table_obj = Table(t_data, colWidths=[col_w] * len(table_rows[0]))
@@ -256,8 +307,8 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
         # Handle English Memory Story Mnemonic (Warm Golden Box)
         if "memory story" in line.lower() or "mnemonic" in line.lower() or "rapid recall" in line.lower():
             story_box_data = [
-                [Paragraph("<b>RAPID RECALL MEMORY STORY (EXAM REVISION ANCHOR):</b>", ParagraphStyle('StryHdr', fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#92400e')))],
-                [Paragraph(safe_pdf_text(line), story_text_style)]
+                [Paragraph("<b>RAPID RECALL MEMORY STORY:</b>", ParagraphStyle('StryHdr', fontName=PDF_FONT_BOLD, fontSize=8.5, textColor=colors.HexColor('#92400e')))],
+                [Paragraph(clean_pdf_text(line), story_text_style)]
             ]
             story_card = Table(story_box_data, colWidths=[content_width])
             story_card.setStyle(TableStyle([
@@ -276,77 +327,36 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
         # Handle Headings
         if line.startswith("#"):
             clean_h = re.sub(r"^#+\s*", "", line)
-            story.append(Paragraph(f"<b>{safe_pdf_text(clean_h).upper()}</b>", h1_style))
+            story.append(Paragraph(f"<b>{clean_pdf_text(clean_h).upper()}</b>", h1_style))
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e2e8f0'), spaceBefore=1, spaceAfter=4))
         # Handle Bullets
         elif line.startswith(("-", "*")) or (len(line) > 2 and line[0].isdigit() and line[1] in [".", ")"]):
             clean_bullet = re.sub(r"^[-*]\s*", "", line)
             clean_bullet = re.sub(r"^\d+[\.\)]\s*", "", clean_bullet)
-            story.append(Paragraph(f"&bull;&nbsp;&nbsp;{safe_pdf_text(clean_bullet)}", bullet_style))
+            story.append(Paragraph(f"&bull;&nbsp;&nbsp;{clean_pdf_text(clean_bullet)}", bullet_style))
         else:
-            story.append(Paragraph(safe_pdf_text(line), body_style))
+            story.append(Paragraph(clean_pdf_text(line), body_style))
 
     return story
 
 def generate_single_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes:
-    """Creates a publication-grade single answer PDF."""
+    """Generates a clean single Q&A PDF without '???' artifacts."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=48, bottomMargin=48)
     story = build_pdf_story_for_qa(question, marks, answer_markdown)
-    doc.build(story, canvasmaker=LokSewaNumberedCanvas)
+    doc.build(story, canvasmaker=CleanNumberedCanvas)
     return buffer.getvalue()
 
-def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MASTER DOSSIER") -> bytes:
-    """Creates an exam workbook with an Executive Index page for all questions."""
+def generate_bulk_pdf_bytes(qa_list: list, title: str = "") -> bytes:
+    """
+    Generates a bulk PDF containing strictly Question and Answers only.
+    No index, no table of contents, no filler pages.
+    """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=48, bottomMargin=48)
-    content_width = 515
-    styles = getSampleStyleSheet()
-
     story = []
 
-    # 1. DOSSIER COVER / HEADER BLOCK
-    banner_style = ParagraphStyle('DossierBanner', fontName='Helvetica-Bold', fontSize=14, leading=18, textColor=colors.HexColor('#1b5e20'), alignment=1)
-    sub_banner = ParagraphStyle('SubBanner', fontName='Helvetica', fontSize=9, leading=12, textColor=colors.HexColor('#475569'), alignment=1)
-
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) — NEPAL", banner_style))
-    story.append(Paragraph("Nepal Agricultural Service &bull; Gazetted Third Class (Technical Officer / कृषि अधिकृत)", sub_banner))
-    story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1b5e20'), spaceBefore=4, spaceAfter=14))
-
-    # 2. EXECUTIVE INDEX TABLE
-    story.append(Paragraph("<b>TABLE OF CONTENTS &bull; QUESTION ROSTER:</b>", ParagraphStyle('IdxHdr', fontName='Helvetica-Bold', fontSize=9.5, textColor=colors.HexColor('#0f172a'), spaceAfter=6)))
-    
-    index_data = [
-        [
-            Paragraph("<b>S.N.</b>", ParagraphStyle('TH1', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=1)),
-            Paragraph("<b>QUESTION TOPIC / TITLE</b>", ParagraphStyle('TH2', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white)),
-            Paragraph("<b>MARKS</b>", ParagraphStyle('TH3', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=1))
-        ]
-    ]
-    for idx, item in enumerate(qa_list):
-        short_q = item['question'][:85] + "..." if len(item['question']) > 85 else item['question']
-        index_data.append([
-            Paragraph(f"<b>#{idx+1:02d}</b>", ParagraphStyle('TD1', fontName='Helvetica', fontSize=8, alignment=1)),
-            Paragraph(safe_pdf_text(short_q), ParagraphStyle('TD2', fontName='Helvetica', fontSize=8)),
-            Paragraph(f"<b>{item.get('marks', 10)}</b>", ParagraphStyle('TD3', fontName='Helvetica', fontSize=8, alignment=1))
-        ])
-
-    idx_table = Table(index_data, colWidths=[40, 415, 60])
-    idx_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1b5e20')),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
-        ('TOPPADDING', (0, 0), (-1, -1), 4.5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4.5),
-    ]))
-    story.append(idx_table)
-    story.append(Spacer(1, 15))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cbd5e1'), spaceBefore=8, spaceAfter=12))
-    story.append(PageBreak())  # Questions start fresh on Page 2
-
-    # 3. CONCATENATE ALL QUESTIONS WITH SECTION SEPARATORS
+    # Pure Question-Answer sequence separated by clean page breaks
     for idx, item in enumerate(qa_list):
         q_story = build_pdf_story_for_qa(
             item["question"],
@@ -357,9 +367,9 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MASTER DOSS
         story.extend(q_story)
         if idx < len(qa_list) - 1:
             story.append(Spacer(1, 15))
-            story.append(PageBreak())  # Clean break between questions for readability
+            story.append(PageBreak())  # Next question starts on a fresh page
 
-    doc.build(story, canvasmaker=LokSewaNumberedCanvas)
+    doc.build(story, canvasmaker=CleanNumberedCanvas)
     return buffer.getvalue()
 
 # -------------------------------------------------------------
@@ -624,7 +634,7 @@ st.sidebar.markdown(f"### 📚 Saved Notes: **{saved_count}**")
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Post-2024 Verified Data Baseline | Executive PDF Publishing Engine | English Story Mnemonics")
+st.caption("Post-2024 Verified Data Baseline | Clean Q&A PDF Engine (No Artifacts) | English Story Mnemonics")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -764,11 +774,12 @@ with tab1:
                 
                 col_b1, col_b2 = st.columns([1, 1])
                 with col_b1:
-                    bulk_pdf_bytes = generate_bulk_pdf_bytes(bulk_data, title="COMPLETE EXAM PAPER MASTER DOSSIER")
+                    # Clean PDF with pure Questions and Answers only (no index page)
+                    bulk_pdf_bytes = generate_bulk_pdf_bytes(bulk_data)
                     st.download_button(
-                        label=f"📥 Download ALL {len(bulk_data)} Answers as Single Executive PDF",
+                        label=f"📥 Download ALL {len(bulk_data)} Q&A as Single PDF",
                         data=bulk_pdf_bytes,
-                        file_name=f"complete_exam_dossier_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        file_name=f"all_exam_answers_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                         mime="application/pdf",
                         type="primary",
                         use_container_width=True
@@ -856,11 +867,12 @@ with tab3:
     else:
         col_r1, col_r2 = st.columns([2, 1])
         with col_r1:
-            all_bank_pdf = generate_bulk_pdf_bytes(notes, title="MY COMPLETE REVISION BANK MASTER DOSSIER")
+            # Clean Revision Bank PDF with Questions and Answers only (no index)
+            all_bank_pdf = generate_bulk_pdf_bytes(notes)
             st.download_button(
-                label=f"📥 Download Entire Revision Bank ({len(notes)} Questions) as Single Executive PDF",
+                label=f"📥 Download Entire Revision Bank ({len(notes)} Questions) as Single PDF",
                 data=all_bank_pdf,
-                file_name=f"complete_revision_bank_dossier_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                file_name=f"my_revision_notes_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime="application/pdf",
                 type="primary",
                 use_container_width=True
