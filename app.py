@@ -1,7 +1,6 @@
 import streamlit as st
 import base64
 import os
-import json
 from groq import Groq
 from PIL import Image
 import io
@@ -10,7 +9,7 @@ import io
 # PAGE CONFIGURATION
 # -------------------------------------------------------------
 st.set_page_config(
-    page_title="Lok Sewa Agri Officer (Gazetted 3rd Class) Coach",
+    page_title="Lok Sewa Agri Officer Coach",
     page_icon="🌾",
     layout="wide"
 )
@@ -54,9 +53,16 @@ def get_groq_client(api_key: str):
         return None
     return Groq(api_key=api_key)
 
+def get_active_groq_models(client):
+    """Dynamically fetches active models from the user's Groq account."""
+    try:
+        models = client.models.list()
+        return [m.id for m in models.data]
+    except Exception:
+        return []
+
 def encode_image_to_base64(image: Image.Image) -> str:
     buffered = io.BytesIO()
-    # Convert RGBA to RGB if needed
     if image.mode in ("RGBA", "P"):
         image = image.convert("RGB")
     image.save(buffered, format="JPEG", quality=90)
@@ -67,11 +73,11 @@ def extract_questions_from_image(client, image: Image.Image, vision_model: str):
     base64_image = encode_image_to_base64(image)
     
     extraction_prompt = """
-    Look at this image of an exam question paper. Extract and transcribe EVERY SINGLE QUESTION clearly and accurately.
+    Analyze this exam paper image. Extract and transcribe EVERY SINGLE QUESTION clearly and accurately.
     Number each question clearly (e.g., Q1, Q2, Q3...).
     If marks are indicated on the paper (e.g., [5], [10], 5+5=10), mention the marks beside the question.
     
-    Output format: Return ONLY a numbered list of all questions found on the paper. Do not add conversational commentary.
+    Output format: Return ONLY the numbered list of all questions found on the paper. Do not add conversational intro or outro.
     """
     
     response = client.chat.completions.create(
@@ -135,25 +141,40 @@ with st.sidebar:
         "Enter Groq API Key", 
         type="password", 
         value=os.getenv("GROQ_API_KEY", ""),
-        help="Get your free key from https://console.groq.com/keys"
+        help="Get your key from https://console.groq.com/keys"
     )
+    
+    # Official replacement vision models on Groq
+    default_vision_models = [
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "qwen/qwen3.6-27b"
+    ]
+    
+    # Text reasoning models
+    default_text_models = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant"
+    ]
     
     st.markdown("---")
     st.subheader("Model Selection")
+    
+    # Vision model selection with custom fallback
     vision_model = st.selectbox(
         "Vision Model (for Photo OCR)",
-        ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"],
-        index=0
+        options=default_vision_models,
+        index=0,
+        help="Llama 4 Scout is Groq's official replacement for Llama 3.2 Vision."
     )
     
     text_model = st.selectbox(
         "Reasoning / Writing Model",
-        ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile"],
+        options=default_text_models,
         index=0
     )
     
     st.markdown("---")
-    st.info("💡 **Tip:** Designed strictly as per the Public Service Commission (Lok Sewa) Syllabus for Gazetted 3rd Class Officers.")
+    st.info("💡 **Model Update:** `llama-3.2-11b-vision-preview` was deprecated by Groq. Upgraded to `meta-llama/llama-4-scout-17b-16e-instruct`.")
 
 # -------------------------------------------------------------
 # MAIN APP BODY
@@ -187,7 +208,7 @@ with tab1:
             
         with col_act:
             if st.button("🔍 Extract All Questions from Image", type="primary", use_container_width=True):
-                with st.spinner("Analyzing image and extracting questions via Groq Vision..."):
+                with st.spinner(f"Analyzing image using {vision_model}..."):
                     try:
                         extracted_text = extract_questions_from_image(client, image, vision_model)
                         st.session_state["extracted_questions_raw"] = extracted_text
@@ -202,12 +223,11 @@ with tab1:
     if "extracted_questions_raw" in st.session_state:
         st.markdown("---")
         st.subheader("📋 Extracted Questions")
-        st.text_area("Extracted List (You can edit if any typo occurred):", 
+        st.text_area("Extracted List (You can edit or add missing numbers if needed):", 
                      value=st.session_state["extracted_questions_raw"], 
                      height=200, 
                      key="editable_questions")
         
-        # Selection for answering
         question_list = st.session_state.get("parsed_questions", [])
         
         mode = st.radio("Choose answering mode:", ["Answer a Specific Question", "Answer ALL Questions Sequentially"], horizontal=True)
@@ -253,7 +273,7 @@ with tab1:
 with tab2:
     st.subheader("Type or Paste Question")
     single_question = st.text_area("Enter question here (English or Nepali):", 
-                                  placeholder="e.g., Discuss the role of Agricultural Knowledge Centres (AKC) in technology dissemination under the federal structure of Nepal. Mention the major challenges and suggest practical measures. [10 marks]",
+                                  placeholder="e.g., Explain the importance and seed certification procedures of major cereal crops in Nepal. [10 marks]",
                                   height=120)
     
     col1, col2 = st.columns([1, 2])
