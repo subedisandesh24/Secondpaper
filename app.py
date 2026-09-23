@@ -23,7 +23,7 @@ TRIPLE_BACKTICKS = chr(96) * 3
 # PAGE CONFIGURATION
 # -------------------------------------------------------------
 st.set_page_config(
-    page_title="Lok Sewa Agri Officer (Gazetted 3rd Class) Coach",
+    page_title="Lok Sewa Agri Officer Coach",
     page_icon="🌾",
     layout="wide"
 )
@@ -54,7 +54,6 @@ def sanitize_for_pdf(text: str) -> str:
     return text.encode("latin-1", "replace").decode("latin-1")
 
 def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
-    """Builds flowables for a single question-answer block."""
     styles = getSampleStyleSheet()
     
     q_box = ParagraphStyle(
@@ -136,17 +135,12 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
     return story
 
 def generate_single_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes:
-    """Generates an A4 PDF for one question."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
     
-    header_style = ParagraphStyle(
-        'Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, leading=15, textColor=colors.HexColor('#1b5e20'), alignment=1
-    )
-    sub_header = ParagraphStyle(
-        'SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11, textColor=colors.HexColor('#555555'), alignment=1
-    )
+    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, leading=15, textColor=colors.HexColor('#1b5e20'), alignment=1)
+    sub_header = ParagraphStyle('SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11, textColor=colors.HexColor('#555555'), alignment=1)
 
     story = [
         Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL", header_style),
@@ -158,17 +152,12 @@ def generate_single_pdf_bytes(question: str, marks: int, answer_markdown: str) -
     return buffer.getvalue()
 
 def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWERS") -> bytes:
-    """Combines multiple questions into a single consolidated PDF booklet."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
     
-    header_style = ParagraphStyle(
-        'HeaderBulk', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=colors.HexColor('#1b5e20'), alignment=1
-    )
-    sub_header = ParagraphStyle(
-        'SubHeaderBulk', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#555555'), alignment=1
-    )
+    header_style = ParagraphStyle('HeaderBulk', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=colors.HexColor('#1b5e20'), alignment=1)
+    sub_header = ParagraphStyle('SubHeaderBulk', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#555555'), alignment=1)
 
     story = [
         Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL", header_style),
@@ -214,7 +203,7 @@ LOKSEWA_SYSTEM_PROMPT = (
     "- Agri Census 2078 (NSO): 4.13 million holdings; 2.218 million ha cultivated land; 0.55 ha average parcel; 54.5% holdings irrigated (~33% year-round).\n\n"
     "MANDATORY GRAPH OR FLOWCHART INSTRUCTION:\n"
     "In every answer, include AT LEAST ONE graphical visualization using valid Mermaid syntax enclosed in " + TRIPLE_BACKTICKS + "mermaid ... " + TRIPLE_BACKTICKS + ".\n"
-    "Depending on the question type, provide either a Data Graph (e.g. `xychart-beta` / `pie`) or a Process Flowchart (`graph TD`).\n\n"
+    "Depending on the question, provide either a Data Graph (`xychart-beta` / `pie`) or a Process Flowchart (`graph TD`).\n\n"
     "STRICT ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences)\n"
     "2. Current Scenario & Verified Data Snapshot (3-4 bullet points)\n"
@@ -223,7 +212,7 @@ LOKSEWA_SYSTEM_PROMPT = (
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
     "6. Key Operational Challenges (4-5 points)\n"
     "7. Actionable Way Forward (Federal, Provincial, Local roles)\n"
-    "8. Mnemonic for Quick Recall (English or Nepali acronym)\n"
+    "8. Mnemonic for Quick Recall\n"
     "9. Strategic Conclusion"
 )
 
@@ -251,37 +240,44 @@ def render_loksewa_content(content_text: str):
                 st.markdown(part)
 
 # -------------------------------------------------------------
-# GROQ API HELPERS (DECOMMISSIONED MODELS REMOVED)
+# DYNAMIC MODEL DISCOVERY (PREVENTS 404 ERRORS)
 # -------------------------------------------------------------
 def get_groq_client(api_key: str):
     if not api_key:
         return None
     return Groq(api_key=api_key)
 
-def auto_detect_models(client):
-    """Selects only verified active models, avoiding decommissioned ones."""
+def get_account_active_models(client):
+    """Fetches exact models available to this API key to guarantee no 404 errors."""
     try:
-        active_ids = [m.id for m in client.models.list().data]
+        models = client.models.list()
+        all_ids = [m.id for m in models.data]
         
-        # Vision model priority
-        vision_candidates = ["qwen/qwen3.8-27b", "qwen/qwen3.6-27b"]
-        vision_model = "qwen/qwen3.8-27b"
-        for v in vision_candidates:
-            if v in active_ids:
-                vision_model = v
-                break
+        # Filter for text chat models (exclude whisper audio)
+        text_models = [m for m in all_ids if "whisper" not in m.lower() and "guard" not in m.lower()]
+        
+        # Sort so preferred models appear at the top
+        priority_order = [
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "llama-3.1-8b-instant"
+        ]
+        sorted_text = []
+        for p in priority_order:
+            if p in text_models:
+                sorted_text.append(p)
+        for m in text_models:
+            if m not in sorted_text:
+                sorted_text.append(m)
                 
-        # Text model priority: NO llama-3.1-70b-versatile!
-        text_candidates = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-        text_model = "llama-3.3-70b-versatile"
-        for t in text_candidates:
-            if t in active_ids:
-                text_model = t
-                break
-                
-        return vision_model, text_model
+        # Vision models
+        vision_models = [m for m in all_ids if "qwen" in m.lower() or "vision" in m.lower()]
+        if not vision_models:
+            vision_models = ["qwen/qwen3.8-27b"]
+            
+        return vision_models, sorted_text
     except Exception:
-        return "qwen/qwen3.8-27b", "llama-3.3-70b-versatile"
+        return ["qwen/qwen3.8-27b"], ["llama-3.1-8b-instant"]
 
 def preprocess_and_encode_image(image: Image.Image) -> str:
     if image.mode in ("RGBA", "P"):
@@ -366,6 +362,24 @@ with st.sidebar:
         value=os.getenv("GROQ_API_KEY", ""),
         help="Free API Key from console.groq.com"
     )
+    
+    if groq_api_key:
+        client = get_groq_client(groq_api_key)
+        vision_options, text_options = get_account_active_models(client)
+        
+        st.markdown("---")
+        st.markdown("### 🤖 Active Account Models")
+        selected_text_model = st.selectbox(
+            "Writing Model (Verified Active):",
+            text_options,
+            index=0,
+            help="Populated directly from your Groq account so 404 errors can never occur."
+        )
+        selected_vision_model = vision_options[0]
+    else:
+        selected_text_model = "llama-3.1-8b-instant"
+        selected_vision_model = "qwen/qwen3.8-27b"
+
     st.markdown("---")
     st.markdown("### 📜 2080/81 Legal & Policy Updates")
     st.caption(
@@ -384,14 +398,11 @@ with st.sidebar:
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Active Llama-3.3-70B Engine | Batch & Single PDF Download | Serial Revision Bank")
+st.caption("Live-Verified Models | Single & Bulk PDF Export | Serial Revision Bank")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
     st.stop()
-
-client = get_groq_client(groq_api_key)
-vision_model, text_model = auto_detect_models(client)
 
 tab1, tab2, tab3 = st.tabs([
     "📸 Photo Upload (Up to 12 Questions)", 
@@ -417,7 +428,7 @@ with tab1:
             if st.button("🔍 Extract Questions from Photo", type="primary", use_container_width=True):
                 with st.spinner("Extracting questions cleanly..."):
                     try:
-                        extracted_text = extract_questions_from_image(client, image, vision_model)
+                        extracted_text = extract_questions_from_image(client, image, selected_vision_model)
                         st.session_state["extracted_questions_raw"] = extracted_text
                         lines = [q.strip() for q in extracted_text.split("\n") if q.strip() and (q[0].isdigit() or q.upper().startswith("Q"))]
                         st.session_state["parsed_questions"] = lines if lines else [extracted_text]
@@ -436,7 +447,7 @@ with tab1:
         )
         
         # -------------------------------------------------------------
-        # OPTION A: INDIVIDUAL QUESTION WATCH & SAVE
+        # OPTION A: INDIVIDUAL WATCH & SAVE
         # -------------------------------------------------------------
         if mode == "Option A: Watch & Answer Single Question":
             col_q, col_m = st.columns([3, 1])
@@ -448,7 +459,7 @@ with tab1:
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
                 with st.spinner("Preparing answer with 2081 policies and Mermaid visualization..."):
                     try:
-                        ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
+                        ans = generate_loksewa_answer(client, selected_q, q_marks, selected_text_model)
                         st.session_state["current_ans"] = ans
                         st.session_state["current_q"] = selected_q
                         st.session_state["current_marks"] = q_marks
@@ -488,7 +499,7 @@ with tab1:
                 render_loksewa_content(st.session_state["current_ans"])
 
         # -------------------------------------------------------------
-        # OPTION B: BATCH PROCESS & DOWNLOAD ALL AT ONCE
+        # OPTION B: BULK ANSWER & DOWNLOAD ALL AT ONCE
         # -------------------------------------------------------------
         else:
             bulk_marks = st.selectbox("Assign Default Marks per Question:", [5, 10, 15], index=1, key="tab1_bulk_marks")
@@ -502,7 +513,7 @@ with tab1:
                 for idx, q_text in enumerate(question_list):
                     status_text.write(f"✍️ **Drafting Question {idx+1}/{total_count}:** {q_text}")
                     try:
-                        ans_text = generate_loksewa_answer(client, q_text, bulk_marks, text_model)
+                        ans_text = generate_loksewa_answer(client, q_text, bulk_marks, selected_text_model)
                         all_results.append({
                             "question": q_text,
                             "marks": bulk_marks,
@@ -519,7 +530,7 @@ with tab1:
                     
                     prog_bar.progress((idx + 1) / total_count)
                     if idx < total_count - 1:
-                        time.sleep(2)  # Cooldown to respect rate limits
+                        time.sleep(2)
                         
                 st.session_state["bulk_results"] = all_results
                 status_text.success("🎉 All questions answered successfully!")
@@ -528,7 +539,6 @@ with tab1:
                 bulk_data = st.session_state["bulk_results"]
                 st.markdown("---")
                 
-                # Bulk Action Bar
                 col_b1, col_b2 = st.columns([1, 1])
                 with col_b1:
                     bulk_pdf_bytes = generate_bulk_pdf_bytes(bulk_data, title="COMPLETE EXAM PAPER MODEL ANSWERS")
@@ -547,7 +557,6 @@ with tab1:
                         save_notes_to_disk(st.session_state["saved_notes"])
                         st.toast(f"✅ Saved all {len(bulk_data)} questions in serial order!", icon="📚")
                 
-                # Display questions in expanders
                 st.markdown("### 📋 View Answers Individually:")
                 for b_idx, b_item in enumerate(bulk_data):
                     with st.expander(f"Question #{b_idx+1}: {b_item['question']}"):
@@ -573,7 +582,7 @@ with tab2:
         else:
             with st.spinner("Preparing answer with latest 2081 acts and charts..."):
                 try:
-                    ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
+                    ans = generate_loksewa_answer(client, single_q, s_marks, selected_text_model)
                     st.session_state["single_ans"] = ans
                     st.session_state["single_q"] = single_q
                     st.session_state["single_marks"] = s_marks
@@ -622,7 +631,6 @@ with tab3:
     if not notes:
         st.info("No answers saved yet. Click '⭐ Save to Notes' on any question to store it here serially.")
     else:
-        # Option to download the entire Revision Bank as one single PDF
         col_r1, col_r2 = st.columns([2, 1])
         with col_r1:
             all_bank_pdf = generate_bulk_pdf_bytes(notes, title="MY COMPLETE REVISION BANK NOTES")
@@ -642,7 +650,6 @@ with tab3:
 
         st.markdown("---")
         
-        # Display each note in strict serial sequence (1, 2, 3...)
         for idx, item in enumerate(notes):
             serial_no = idx + 1
             with st.expander(f"📌 #{serial_no}. {item['question']} (Saved: {item.get('saved_at', 'N/A')})"):
