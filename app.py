@@ -153,7 +153,7 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWE
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT (TOP-DOWN MERMAID ONLY)
+# LOK SEWA SYSTEM PROMPT (COMPACT AT-A-GLANCE DIAGRAMS)
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service "
@@ -180,15 +180,16 @@ LOKSEWA_SYSTEM_PROMPT = (
     "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural economic transformation.\n"
     "- Constitution of Nepal: Art. 36 (Food Sovereignty), Art. 51(h) (Policies on Agriculture/Land).\n"
     "- ADS (2015-2035) 4 Pillars: Governance, Productivity, Commercialization, Competitiveness.\n\n"
-    "CRITICAL MERMAID RULES (HIGH READABILITY - VERTICAL ONLY):\n"
-    "1. ALWAYS use Top-Down orientation: `graph TD` (NEVER use `graph LR` or `flowchart LR` because horizontal diagrams overflow the screen).\n"
-    "2. Stack nodes vertically: A --> B --> C --> D. Maximum 4-5 sequential boxes.\n"
-    "3. Keep node labels short (under 5 words). Use `<br/>` for line breaks inside labels:\n"
-    "   e.g.:\n"
+    "CRITICAL MERMAID INSTRUCTIONS (MUST BE VISIBLE AT A GLANCE - NO SCROLLING):\n"
+    "1. Keep flowcharts COMPACT (maximum 3 to 4 sequential steps).\n"
+    "2. Use `graph TD` (Top-Down) orientation.\n"
+    "3. Keep text inside boxes concise (3-4 words). Use `<br/>` for line breaks:\n"
+    "   Example:\n"
     "   graph TD\n"
-    "   A[\"Stage 1: Increasing Returns<br/>(High MP & TP)\"] --> B[\"Stage 2: Diminishing Returns<br/>(Rational Production Zone)\"]\n"
-    "   B --> C[\"Stage 3: Negative Returns<br/>(Over-application / Loss)\"]\n"
-    "4. Always wrap node text in double quotes to prevent syntax crashes.\n\n"
+    "   A[\"Variable Input &uarr;<br/>(e.g., Fertilizer)\"] --> B[\"Stage 1: Increasing Returns<br/>(High MP & TP)\"]\n"
+    "   B --> C[\"Stage 2: Diminishing Returns<br/>(Rational Zone: MP falls)\"]\n"
+    "   C --> D[\"Stage 3: Negative Returns<br/>(MP < 0: Over-dosage)\"]\n"
+    "4. Always wrap node labels in double quotes.\n\n"
     "STORY-BASED MNEMONIC REQUIREMENT (कथा स्मरण सूत्र):\n"
     "- DO NOT generate dry acronyms.\n"
     "- Create a vivid, memorable 1-2 sentence micro-story (in Nepali or English) connecting all the core analytical points in chronological order.\n"
@@ -197,7 +198,7 @@ LOKSEWA_SYSTEM_PROMPT = (
     "STRICT ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences: concept, scope, importance)\n"
     "2. Current Scenario & Verified Data Snapshot (cite 25.16% Agri GDP share, 4.61% GDP growth, Census 2078)\n"
-    "3. Mandatory Mermaid Diagram / Graph (TOP-DOWN `graph TD` ONLY)\n"
+    "3. Mandatory Mermaid Diagram / Graph (COMPACT, AT A GLANCE)\n"
     "4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
     "6. Key Operational Challenges (4-5 points)\n"
@@ -207,10 +208,10 @@ LOKSEWA_SYSTEM_PROMPT = (
 )
 
 # -------------------------------------------------------------
-# RESPONSIVE TOP-DOWN MERMAID RENDERING ENGINE
+# COMPACT "AT-A-GLANCE" MERMAID RENDERING ENGINE
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
-    """Renders markdown text with auto-fitting, responsive vertical Mermaid diagrams."""
+    """Renders markdown text with an auto-fit, zero-scroll Mermaid diagram."""
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
     parts = re.split(mermaid_pattern, content_text)
     
@@ -218,12 +219,8 @@ def render_loksewa_content(content_text: str):
         if part.startswith(f"{TRIPLE_BACKTICKS}mermaid"):
             mermaid_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
             
-            # Auto-convert horizontal (LR) to top-down (TD) so it never overflows horizontally
+            # Ensure Top-Down orientation
             mermaid_code = re.sub(r'\b(graph|flowchart)\s+LR\b', r'\1 TD', mermaid_code, flags=re.IGNORECASE)
-            
-            # Dynamic height calculation based on lines of code
-            line_count = len(mermaid_code.strip().split('\n'))
-            dyn_height = min(750, max(260, line_count * 48 + 80))
             
             html_code = f"""
             <!DOCTYPE html>
@@ -232,9 +229,11 @@ def render_loksewa_content(content_text: str):
                 <style>
                     body {{
                         margin: 0;
-                        padding: 10px;
+                        padding: 4px;
                         background: transparent;
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                        display: flex;
+                        justify-content: center;
                     }}
                     .mermaid-wrapper {{
                         display: flex;
@@ -243,17 +242,23 @@ def render_loksewa_content(content_text: str):
                         background-color: #f8fafc;
                         border: 1px solid #cbd5e1;
                         border-radius: 8px;
-                        padding: 16px;
+                        padding: 8px 16px;
                         box-sizing: border-box;
+                        width: 100%;
+                        max-width: 620px;
+                        min-height: 200px;
                     }}
                     .mermaid {{
                         width: 100%;
                         display: flex;
                         justify-content: center;
                     }}
+                    /* Keeps the diagram compact and fully visible at a glance */
                     .mermaid svg {{
+                        max-height: 220px !important;
                         max-width: 100% !important;
                         height: auto !important;
+                        width: auto !important;
                     }}
                 </style>
             </head>
@@ -269,8 +274,12 @@ def render_loksewa_content(content_text: str):
                         startOnLoad: true,
                         theme: 'neutral',
                         securityLevel: 'loose',
+                        themeVariables: {{
+                            fontSize: '12px',
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                        }},
                         flowchart: {{
-                            useMaxWidth: true,
+                            useMaxWidth: false,  /* Prevents giant full-screen blowout */
                             htmlLabels: true,
                             curve: 'basis'
                         }}
@@ -279,13 +288,14 @@ def render_loksewa_content(content_text: str):
             </body>
             </html>
             """
-            components.html(html_code, height=dyn_height, scrolling=False)
+            # Fixed 260px container fits the entire diagram at a single glance
+            components.html(html_code, height=260, scrolling=False)
         else:
             if part.strip():
                 st.markdown(part)
 
 # -------------------------------------------------------------
-# SILENT AUTO-DISCOVERY OF MODELS (NO SIDEBAR CLUTTER)
+# SILENT AUTO-DISCOVERY OF MODELS
 # -------------------------------------------------------------
 def get_groq_client(api_key: str):
     if not api_key:
@@ -293,7 +303,6 @@ def get_groq_client(api_key: str):
     return Groq(api_key=api_key)
 
 def auto_select_models_silently(client):
-    """Silently determines the best active models without showing any sidebar UI clutter."""
     try:
         models = client.models.list()
         all_ids = [m.id for m in models.data]
@@ -366,7 +375,7 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     Adhere strictly to the required answer format:
     1. Concise Introduction (2-3 sentences)
     2. Current Scenario & Official Data Snapshot (Use Verified Data: Agriculture GDP share 25.16%, GDP Growth 4.61%, Census 2078)
-    3. Mermaid Diagram: MANDATORY Top-Down `graph TD` ONLY! Keep labels concise with `<br/>` line breaks so it fits on screen.
+    3. Mermaid Diagram: MANDATORY Top-Down `graph TD` ONLY! Keep it compact (3-4 steps max) with `<br/>` line breaks so the whole diagram is seen at a glance without scrolling.
     4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
     6. Key Challenges (4-5 points)
@@ -409,7 +418,7 @@ st.sidebar.markdown(f"### 📚 Saved Notes: **{saved_count}**")
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Official Data: 25.16% AGDP Share | Story Mnemonics | Responsive Top-Down Flowcharts")
+st.caption("Official Data: 25.16% AGDP Share | Story Mnemonics | Compact At-A-Glance Diagrams")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -460,7 +469,6 @@ with tab1:
             horizontal=True
         )
         
-        # Option A: Single Watch & Save
         if mode == "Option A: Watch & Answer Single Question":
             col_q, col_m = st.columns([3, 1])
             with col_q:
@@ -469,7 +477,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Preparing answer with story mnemonic and top-down diagram..."):
+                with st.spinner("Preparing answer with compact diagram and story mnemonic..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -510,7 +518,6 @@ with tab1:
                 
                 render_loksewa_content(st.session_state["current_ans"])
 
-        # Option B: Bulk Process
         else:
             bulk_marks = st.selectbox("Assign Default Marks per Question:", [5, 10, 15], index=1, key="tab1_bulk_marks")
             
@@ -579,7 +586,7 @@ with tab2:
     st.subheader("Type or Paste Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Explain the Law of Diminishing Marginal Returns (DMRR) with respect to fertilizer application in crop production and its significance in farm management decisions. [10 marks]",
+        placeholder="e.g., Explain the Law of Diminishing Marginal Returns (DMRR) with respect to fertilizer application in crop production. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -590,7 +597,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please type a question.")
         else:
-            with st.spinner("Preparing answer with story mnemonic and top-down diagram..."):
+            with st.spinner("Preparing answer with compact at-a-glance diagram..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
