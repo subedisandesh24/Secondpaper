@@ -4,6 +4,7 @@ import base64
 import os
 import json
 import re
+import time
 from datetime import datetime
 from groq import Groq
 from PIL import Image
@@ -12,7 +13,7 @@ import io
 # ReportLab imports for PDF Generation
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak
 from reportlab.lib import colors
 
 # Constant for triple backticks to avoid markdown copy truncation
@@ -46,56 +47,28 @@ if "saved_notes" not in st.session_state:
     st.session_state["saved_notes"] = load_saved_notes()
 
 # -------------------------------------------------------------
-# PDF GENERATION ENGINE
+# PDF GENERATION ENGINES (SINGLE & BULK)
 # -------------------------------------------------------------
 def sanitize_for_pdf(text: str) -> str:
     """Safely encodes characters so standard PDF fonts never raise Unicode errors."""
     return text.encode("latin-1", "replace").decode("latin-1")
 
-def generate_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes:
-    """Creates an A4 PDF formatted for Lok Sewa examinations."""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=36,
-        bottomMargin=36
-    )
-    
+def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
+    """Builds flowables for a single question-answer block."""
     styles = getSampleStyleSheet()
     
-    header_style = ParagraphStyle(
-        'Header',
-        parent=styles['Normal'],
-        fontName='Helvetica-Bold',
-        fontSize=12,
-        leading=15,
-        textColor=colors.HexColor('#1b5e20'),
-        alignment=1
-    )
-    sub_header = ParagraphStyle(
-        'SubHeader',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor('#555555'),
-        alignment=1
-    )
     q_box = ParagraphStyle(
-        'QBox',
+        f'QBox_{q_num}',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=9.5,
-        leading=13,
+        fontSize=10,
+        leading=14,
         textColor=colors.HexColor('#0d47a1'),
-        spaceBefore=4,
+        spaceBefore=6,
         spaceAfter=6
     )
     h1_style = ParagraphStyle(
-        'H1',
+        f'H1_{q_num}',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
         fontSize=9.5,
@@ -105,7 +78,7 @@ def generate_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes
         spaceAfter=3
     )
     body_style = ParagraphStyle(
-        'Body',
+        f'Body_{q_num}',
         parent=styles['Normal'],
         fontName='Helvetica',
         fontSize=8.5,
@@ -114,7 +87,7 @@ def generate_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes
         spaceAfter=3
     )
     bullet_style = ParagraphStyle(
-        'Bullet',
+        f'Bullet_{q_num}',
         parent=styles['Normal'],
         fontName='Helvetica',
         fontSize=8.5,
@@ -124,15 +97,9 @@ def generate_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes
     )
 
     story = []
-    
-    # Header
-    story.append(Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL", header_style))
-    story.append(Paragraph("Nepal Agricultural Service | Gazetted Third Class (Technical Officer / कृषि अधिकृत)", sub_header))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1b5e20'), spaceBefore=4, spaceAfter=8))
-    
-    # Question
+    prefix = f"QUESTION #{q_num}" if q_num else "QUESTION"
     clean_q = sanitize_for_pdf(question)
-    story.append(Paragraph(f"<b>QUESTION [{marks} Marks]:</b> {clean_q}", q_box))
+    story.append(Paragraph(f"<b>{prefix} [{marks} Marks]:</b> {clean_q}", q_box))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cccccc'), spaceBefore=2, spaceAfter=6))
     
     lines = answer_markdown.split("\n")
@@ -145,7 +112,7 @@ def generate_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes
             
         if f"{TRIPLE_BACKTICKS}mermaid" in line:
             in_mermaid = True
-            story.append(Paragraph("<b>[DIAGRAM / GRAPHICAL VISUALIZATION]</b>", h1_style))
+            story.append(Paragraph("<b>[PROCESS FLOW / CONCEPTUAL DIAGRAM]</b>", h1_style))
             continue
         elif in_mermaid and TRIPLE_BACKTICKS in line:
             in_mermaid = False
@@ -166,24 +133,80 @@ def generate_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes
             clean_body = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", line)
             story.append(Paragraph(sanitize_for_pdf(clean_body), body_style))
             
+    return story
+
+def generate_single_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes:
+    """Generates an A4 PDF for one question."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=36, bottomMargin=36)
+    styles = getSampleStyleSheet()
+    
+    header_style = ParagraphStyle(
+        'Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, leading=15, textColor=colors.HexColor('#1b5e20'), alignment=1
+    )
+    sub_header = ParagraphStyle(
+        'SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11, textColor=colors.HexColor('#555555'), alignment=1
+    )
+
+    story = [
+        Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL", header_style),
+        Paragraph("Nepal Agricultural Service | Gazetted Third Class (Technical Officer / कृषि अधिकृत)", sub_header),
+        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1b5e20'), spaceBefore=4, spaceAfter=8)
+    ]
+    story.extend(build_pdf_story_for_qa(question, marks, answer_markdown))
+    doc.build(story)
+    return buffer.getvalue()
+
+def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWERS") -> bytes:
+    """Combines multiple questions into a single consolidated PDF booklet."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=36, bottomMargin=36)
+    styles = getSampleStyleSheet()
+    
+    header_style = ParagraphStyle(
+        'HeaderBulk', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=colors.HexColor('#1b5e20'), alignment=1
+    )
+    sub_header = ParagraphStyle(
+        'SubHeaderBulk', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#555555'), alignment=1
+    )
+
+    story = [
+        Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL", header_style),
+        Paragraph(f"Nepal Agricultural Service | {title}", sub_header),
+        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1b5e20'), spaceBefore=4, spaceAfter=10)
+    ]
+    
+    for idx, item in enumerate(qa_list):
+        q_story = build_pdf_story_for_qa(
+            item["question"],
+            item.get("marks", 10),
+            item["answer"],
+            q_num=idx + 1
+        )
+        story.extend(q_story)
+        if idx < len(qa_list) - 1:
+            story.append(Spacer(1, 15))
+            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e0e0e0'), spaceBefore=10, spaceAfter=15))
+            story.append(PageBreak())
+            
     doc.build(story)
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA UPDATED SYSTEM PROMPT (2080/2081 REVISED FRAMEWORKS)
+# LOK SEWA SYSTEM PROMPT
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service "
     "(Gazetted Third Class / रा.प. तृतीय श्रेणी - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
     "Your mission is to produce high-scoring, concise, examiner-friendly answers tailored for the 3-hour written exam.\n"
     "Provide FEWER, PUNCHY, HIGH-IMPACT, EASY-TO-REMEMBER points suitable for a 13-14 minute writing window.\n\n"
-    "MANDATORY UPDATED LEGISLATION & POLICY BASELINE (2080/2081/2082):\n"
-    "- National Agriculture Policy, 2081 (राष्ट्रिय कृषि नीति, २०८१): Federalized alignment (Schedules 5-9), commercial ecosystem, climate resilience, and import substitution.\n"
-    "- Agriculture Investment Decade 2081-2091 (कृषिमा लगानी दशक, २०८१-२०९१): Public-Private-Cooperative partnership model.\n"
-    "- Food Hygiene and Quality Act, 2081 (खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१): Farm-to-fork quality, SPS compliance, and traceability.\n"
-    "- Pesticides Management Act, 2076 & Pesticide Management Regulation, 2081 (विषादी व्यवस्थापन नियमावली, २०८१).\n"
+    "MANDATORY UPDATED LEGISLATION & POLICY BASELINE (2080/2081):\n"
+    "- National Agriculture Policy, 2081 (राष्ट्रिय कृषि नीति, २०८१): Federalized alignment (Schedules 5-9), commercial ecosystem, climate resilience.\n"
+    "- Agriculture Investment Decade 2081-2091 (कृषिमा लगानी दशक, २०८१-२०९१): Public-Private-Cooperative partnership.\n"
+    "- Food Hygiene and Quality Act, 2081 (खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१): Farm-to-fork quality, SPS compliance, traceability.\n"
+    "- Pesticides Management Act, 2076 & Pesticide Management Regulation, 2081.\n"
     "- Plant Protection Regulation (First Amendment), 2080.\n"
-    "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural economic transformation.\n"
+    "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural transformation.\n"
     "- Constitution of Nepal: Art. 36 (Food Sovereignty), Art. 51(h) (Policies on Agriculture/Land).\n"
     "- ADS (2015-2035) 4 Pillars: Governance, Productivity, Commercialization, Competitiveness.\n\n"
     "AUTHENTIC STATISTICAL DATA:\n"
@@ -191,23 +214,21 @@ LOKSEWA_SYSTEM_PROMPT = (
     "- Agri Census 2078 (NSO): 4.13 million holdings; 2.218 million ha cultivated land; 0.55 ha average parcel; 54.5% holdings irrigated (~33% year-round).\n\n"
     "MANDATORY GRAPH OR FLOWCHART INSTRUCTION:\n"
     "In every answer, include AT LEAST ONE graphical visualization using valid Mermaid syntax enclosed in " + TRIPLE_BACKTICKS + "mermaid ... " + TRIPLE_BACKTICKS + ".\n"
-    "Depending on the question type, choose either:\n"
-    "1. A Data Graph / Chart (e.g. `xychart-beta` bar/line chart or `pie` chart for statistics, land use, or budgets).\n"
-    "2. A Process Flowchart (e.g. `graph TD` or `flowchart LR` for value chains, certification, or institutional linkages).\n\n"
+    "Depending on the question type, provide either a Data Graph (e.g. `xychart-beta` / `pie`) or a Process Flowchart (`graph TD`).\n\n"
     "STRICT ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences)\n"
     "2. Current Scenario & Verified Data Snapshot (3-4 bullet points)\n"
-    "3. Mandatory Mermaid Diagram / Graph (Flowchart, Bar Chart, or Pie Chart)\n"
-    "4. Policy & Constitutional Linkage (National Agri Policy 2081, 16th Plan, Investment Decade 2081-2091, Food Hygiene Act 2081)\n"
+    "3. Mandatory Mermaid Diagram / Graph\n"
+    "4. Policy & Constitutional Linkage (National Agri Policy 2081, 16th Plan, Food Hygiene Act 2081)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
-    "6. Key Operational Challenges (4-5 categorized points)\n"
+    "6. Key Operational Challenges (4-5 points)\n"
     "7. Actionable Way Forward (Federal, Provincial, Local roles)\n"
     "8. Mnemonic for Quick Recall (English or Nepali acronym)\n"
     "9. Strategic Conclusion"
 )
 
 # -------------------------------------------------------------
-# MERMAID RENDERING HELPER (SUPPORTS GRAPHS & FLOWCHARTS)
+# MERMAID RENDERING HELPER
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
@@ -230,7 +251,7 @@ def render_loksewa_content(content_text: str):
                 st.markdown(part)
 
 # -------------------------------------------------------------
-# GROQ API HELPERS
+# GROQ API HELPERS (DECOMMISSIONED MODELS REMOVED)
 # -------------------------------------------------------------
 def get_groq_client(api_key: str):
     if not api_key:
@@ -238,10 +259,26 @@ def get_groq_client(api_key: str):
     return Groq(api_key=api_key)
 
 def auto_detect_models(client):
+    """Selects only verified active models, avoiding decommissioned ones."""
     try:
         active_ids = [m.id for m in client.models.list().data]
-        vision_model = "qwen/qwen3.8-27b" if "qwen/qwen3.8-27b" in active_ids else "qwen/qwen3.6-27b"
-        text_model = "llama-3.3-70b-versatile" if "llama-3.3-70b-versatile" in active_ids else "llama-3.1-70b-versatile"
+        
+        # Vision model priority
+        vision_candidates = ["qwen/qwen3.8-27b", "qwen/qwen3.6-27b"]
+        vision_model = "qwen/qwen3.8-27b"
+        for v in vision_candidates:
+            if v in active_ids:
+                vision_model = v
+                break
+                
+        # Text model priority: NO llama-3.1-70b-versatile!
+        text_candidates = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+        text_model = "llama-3.3-70b-versatile"
+        for t in text_candidates:
+            if t in active_ids:
+                text_model = t
+                break
+                
         return vision_model, text_model
     except Exception:
         return "qwen/qwen3.8-27b", "llama-3.3-70b-versatile"
@@ -282,7 +319,7 @@ def extract_questions_from_image(client, image: Image.Image, vision_model: str):
     )
     return response.choices[0].message.content
 
-def generate_loksewa_answer(client, question_text: str, marks: int, text_model: str):
+def generate_loksewa_answer(client, question_text: str, marks: int, text_model: str, retries: int = 2):
     user_prompt = f"""
     Write a high-scoring Lok Sewa examination answer for:
     
@@ -292,24 +329,31 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     Adhere strictly to the required answer format:
     1. Concise Introduction (2-3 sentences)
     2. Current Scenario & Official Data Snapshot (Economic Survey 2080/81 & Census 2078)
-    3. Mermaid Diagram or Data Graph (Use ```mermaid ... ``` - either xychart bar/line chart or process flowchart)
-    4. Policy & Constitutional Linkage (Include National Agriculture Policy 2081, Investment Decade 2081-2091, Food Hygiene & Quality Act 2081, 16th Plan)
+    3. Mermaid Diagram or Data Graph (Use ```mermaid ... ```)
+    4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
     6. Key Challenges (4-5 points)
     7. Way Forward (Federal, Provincial, Local roles)
     8. Mnemonic for Quick Recall
     9. Strategic Conclusion
     """
-    response = client.chat.completions.create(
-        model=text_model,
-        messages=[
-            {"role": "system", "content": LOKSEWA_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.2,
-        max_tokens=3200,
-    )
-    return response.choices[0].message.content
+    for attempt in range(retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model=text_model,
+                messages=[
+                    {"role": "system", "content": LOKSEWA_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                max_tokens=3200,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            if "429" in str(e) and attempt < retries:
+                time.sleep(5)
+                continue
+            raise e
 
 # -------------------------------------------------------------
 # SIDEBAR
@@ -334,13 +378,13 @@ with st.sidebar:
     )
     st.markdown("---")
     saved_count = len(st.session_state["saved_notes"])
-    st.markdown(f"### 📚 Saved Notes: **{saved_count}**")
+    st.markdown(f"### 📚 Serial Revision Bank: **{saved_count} Notes**")
 
 # -------------------------------------------------------------
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Updated with 2081 Policies | Data Charts & Flowcharts | PDF Export")
+st.caption("Active Llama-3.3-70B Engine | Batch & Single PDF Download | Serial Revision Bank")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -383,56 +427,131 @@ with tab1:
 
     if "extracted_questions_raw" in st.session_state:
         st.markdown("---")
-        st.subheader("📋 Select Question to Answer")
         question_list = st.session_state.get("parsed_questions", [])
         
-        col_q, col_m = st.columns([3, 1])
-        with col_q:
-            selected_q = st.selectbox("Choose question:", question_list)
-        with col_m:
-            q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_marks")
-            
-        if st.button("🚀 Generate High-Scoring Answer", type="primary"):
-            with st.spinner("Preparing answer with 2081 policies and Mermaid visualization..."):
-                try:
-                    ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
-                    st.session_state["current_ans"] = ans
-                    st.session_state["current_q"] = selected_q
-                    st.session_state["current_marks"] = q_marks
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+        mode = st.radio(
+            "Select Answering Mode:",
+            ["Option A: Watch & Answer Single Question", "Option B: Answer & Download ALL Questions at Once"],
+            horizontal=True
+        )
+        
+        # -------------------------------------------------------------
+        # OPTION A: INDIVIDUAL QUESTION WATCH & SAVE
+        # -------------------------------------------------------------
+        if mode == "Option A: Watch & Answer Single Question":
+            col_q, col_m = st.columns([3, 1])
+            with col_q:
+                selected_q = st.selectbox("Choose question:", question_list)
+            with col_m:
+                q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
+                
+            if st.button("🚀 Generate Answer for Selected Question", type="primary"):
+                with st.spinner("Preparing answer with 2081 policies and Mermaid visualization..."):
+                    try:
+                        ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
+                        st.session_state["current_ans"] = ans
+                        st.session_state["current_q"] = selected_q
+                        st.session_state["current_marks"] = q_marks
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
 
-        if "current_ans" in st.session_state:
-            st.markdown("---")
-            col_t, col_save, col_pdf = st.columns([3, 1, 1])
-            with col_t:
-                st.subheader("📝 Model Answer")
-            with col_save:
-                if st.button("⭐ Save to Notes", key="save_tab1", use_container_width=True):
-                    new_item = {
-                        "question": st.session_state["current_q"],
-                        "marks": st.session_state.get("current_marks", 10),
-                        "answer": st.session_state["current_ans"],
-                        "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-                    }
-                    st.session_state["saved_notes"].insert(0, new_item)
-                    save_notes_to_disk(st.session_state["saved_notes"])
-                    st.toast("✅ Saved to Revision Bank!", icon="📚")
-            with col_pdf:
-                pdf_data = generate_pdf_bytes(
-                    st.session_state["current_q"],
-                    st.session_state.get("current_marks", 10),
-                    st.session_state["current_ans"]
-                )
-                st.download_button(
-                    label="📥 Download PDF",
-                    data=pdf_data,
-                    file_name=f"loksewa_answer_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
+            if "current_ans" in st.session_state:
+                st.markdown("---")
+                col_t, col_save, col_pdf = st.columns([3, 1, 1])
+                with col_t:
+                    st.subheader("📝 Model Answer")
+                with col_save:
+                    if st.button("⭐ Save to Notes (Serial)", key="save_tab1", use_container_width=True):
+                        new_item = {
+                            "question": st.session_state["current_q"],
+                            "marks": st.session_state.get("current_marks", 10),
+                            "answer": st.session_state["current_ans"],
+                            "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        }
+                        st.session_state["saved_notes"].append(new_item)
+                        save_notes_to_disk(st.session_state["saved_notes"])
+                        st.toast("✅ Saved in serial order to Revision Bank!", icon="📚")
+                with col_pdf:
+                    pdf_data = generate_single_pdf_bytes(
+                        st.session_state["current_q"],
+                        st.session_state.get("current_marks", 10),
+                        st.session_state["current_ans"]
+                    )
+                    st.download_button(
+                        label="📥 Download This Answer (PDF)",
+                        data=pdf_data,
+                        file_name=f"loksewa_answer_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                
+                render_loksewa_content(st.session_state["current_ans"])
+
+        # -------------------------------------------------------------
+        # OPTION B: BATCH PROCESS & DOWNLOAD ALL AT ONCE
+        # -------------------------------------------------------------
+        else:
+            bulk_marks = st.selectbox("Assign Default Marks per Question:", [5, 10, 15], index=1, key="tab1_bulk_marks")
             
-            render_loksewa_content(st.session_state["current_ans"])
+            if st.button("🚀 Generate Answers for ALL Questions at Once", type="primary"):
+                all_results = []
+                prog_bar = st.progress(0)
+                status_text = st.empty()
+                total_count = len(question_list)
+                
+                for idx, q_text in enumerate(question_list):
+                    status_text.write(f"✍️ **Drafting Question {idx+1}/{total_count}:** {q_text}")
+                    try:
+                        ans_text = generate_loksewa_answer(client, q_text, bulk_marks, text_model)
+                        all_results.append({
+                            "question": q_text,
+                            "marks": bulk_marks,
+                            "answer": ans_text,
+                            "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        })
+                    except Exception as e:
+                        all_results.append({
+                            "question": q_text,
+                            "marks": bulk_marks,
+                            "answer": f"Generation failed: {str(e)}",
+                            "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        })
+                    
+                    prog_bar.progress((idx + 1) / total_count)
+                    if idx < total_count - 1:
+                        time.sleep(2)  # Cooldown to respect rate limits
+                        
+                st.session_state["bulk_results"] = all_results
+                status_text.success("🎉 All questions answered successfully!")
+
+            if "bulk_results" in st.session_state and st.session_state["bulk_results"]:
+                bulk_data = st.session_state["bulk_results"]
+                st.markdown("---")
+                
+                # Bulk Action Bar
+                col_b1, col_b2 = st.columns([1, 1])
+                with col_b1:
+                    bulk_pdf_bytes = generate_bulk_pdf_bytes(bulk_data, title="COMPLETE EXAM PAPER MODEL ANSWERS")
+                    st.download_button(
+                        label=f"📥 Download ALL {len(bulk_data)} Answers as Single PDF",
+                        data=bulk_pdf_bytes,
+                        file_name=f"complete_exam_set_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                        use_container_width=True
+                    )
+                with col_b2:
+                    if st.button("⭐ Save ALL to Revision Bank (Serial)", use_container_width=True):
+                        for b_item in bulk_data:
+                            st.session_state["saved_notes"].append(b_item)
+                        save_notes_to_disk(st.session_state["saved_notes"])
+                        st.toast(f"✅ Saved all {len(bulk_data)} questions in serial order!", icon="📚")
+                
+                # Display questions in expanders
+                st.markdown("### 📋 View Answers Individually:")
+                for b_idx, b_item in enumerate(bulk_data):
+                    with st.expander(f"Question #{b_idx+1}: {b_item['question']}"):
+                        render_loksewa_content(b_item["answer"])
 
 # =============================================================
 # TAB 2: MANUAL SINGLE QUESTION INPUT
@@ -467,24 +586,24 @@ with tab2:
         with col_t:
             st.subheader("📝 Model Answer")
         with col_save:
-            if st.button("⭐ Save to Notes", key="save_tab2", use_container_width=True):
+            if st.button("⭐ Save to Notes (Serial)", key="save_tab2", use_container_width=True):
                 new_item = {
                     "question": st.session_state["single_q"],
                     "marks": st.session_state.get("single_marks", 10),
                     "answer": st.session_state["single_ans"],
                     "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")
                 }
-                st.session_state["saved_notes"].insert(0, new_item)
+                st.session_state["saved_notes"].append(new_item)
                 save_notes_to_disk(st.session_state["saved_notes"])
-                st.toast("✅ Saved to Revision Bank!", icon="📚")
+                st.toast("✅ Saved in serial order to Revision Bank!", icon="📚")
         with col_pdf:
-            pdf_data = generate_pdf_bytes(
+            pdf_data = generate_single_pdf_bytes(
                 st.session_state["single_q"],
                 st.session_state.get("single_marks", 10),
                 st.session_state["single_ans"]
             )
             st.download_button(
-                label="📥 Download PDF",
+                label="📥 Download This Answer (PDF)",
                 data=pdf_data,
                 file_name=f"loksewa_answer_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime="application/pdf",
@@ -494,29 +613,51 @@ with tab2:
         render_loksewa_content(st.session_state["single_ans"])
 
 # =============================================================
-# TAB 3: REVISION BANK (SAVED FOR LATER)
+# TAB 3: REVISION BANK (SERIAL ORDER: 1ST SAVED = #1)
 # =============================================================
 with tab3:
-    st.subheader("📚 My Revision Bank (Saved Lok Sewa Answers)")
+    st.subheader(f"📚 Serial Revision Bank ({len(st.session_state['saved_notes'])} Notes)")
     notes = st.session_state["saved_notes"]
     
     if not notes:
-        st.info("No answers saved yet. Click '⭐ Save to Notes' on any generated answer to keep it here.")
+        st.info("No answers saved yet. Click '⭐ Save to Notes' on any question to store it here serially.")
     else:
+        # Option to download the entire Revision Bank as one single PDF
+        col_r1, col_r2 = st.columns([2, 1])
+        with col_r1:
+            all_bank_pdf = generate_bulk_pdf_bytes(notes, title="MY COMPLETE REVISION BANK NOTES")
+            st.download_button(
+                label=f"📥 Download Entire Revision Bank ({len(notes)} Questions) as Single PDF",
+                data=all_bank_pdf,
+                file_name=f"complete_revision_bank_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True
+            )
+        with col_r2:
+            if st.button("🗑️ Clear Entire Revision Bank", use_container_width=True):
+                st.session_state["saved_notes"] = []
+                save_notes_to_disk([])
+                st.rerun()
+
+        st.markdown("---")
+        
+        # Display each note in strict serial sequence (1, 2, 3...)
         for idx, item in enumerate(notes):
-            with st.expander(f"📌 {item['question']} (Saved: {item.get('saved_at', 'Recently')})"):
+            serial_no = idx + 1
+            with st.expander(f"📌 #{serial_no}. {item['question']} (Saved: {item.get('saved_at', 'N/A')})"):
                 col_exp_pdf, col_exp_del = st.columns([1, 1])
                 with col_exp_pdf:
-                    pdf_saved = generate_pdf_bytes(item["question"], item.get("marks", 10), item["answer"])
+                    pdf_saved = generate_single_pdf_bytes(item["question"], item.get("marks", 10), item["answer"])
                     st.download_button(
-                        label=f"📥 Download PDF #{idx+1}",
+                        label=f"📥 Download PDF for #{serial_no}",
                         data=pdf_saved,
-                        file_name=f"saved_note_{idx+1}.pdf",
+                        file_name=f"note_serial_{serial_no}.pdf",
                         mime="application/pdf",
                         key=f"pdf_saved_{idx}"
                     )
                 with col_exp_del:
-                    if st.button(f"🗑️ Delete Note #{idx+1}", key=f"del_{idx}"):
+                    if st.button(f"🗑️ Delete Note #{serial_no}", key=f"del_{idx}"):
                         notes.pop(idx)
                         save_notes_to_disk(notes)
                         st.rerun()
