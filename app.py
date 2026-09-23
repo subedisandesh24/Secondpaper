@@ -1,10 +1,19 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import base64
 import os
-import time
+import json
+import re
+from datetime import datetime
 from groq import Groq
 from PIL import Image
 import io
+
+# ReportLab imports for PDF Generation
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+from reportlab.lib import colors
 
 # -------------------------------------------------------------
 # PAGE CONFIGURATION
@@ -15,302 +24,177 @@ st.set_page_config(
     layout="wide"
 )
 
+SAVED_NOTES_FILE = "saved_loksewa_notes.json"
+
+def load_saved_notes():
+    if os.path.exists(SAVED_NOTES_FILE):
+        try:
+            with open(SAVED_NOTES_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_notes_to_disk(notes):
+    with open(SAVED_NOTES_FILE, "w", encoding="utf-8") as f:
+        json.dump(notes, f, ensure_ascii=False, indent=2)
+
+if "saved_notes" not in st.session_state:
+    st.session_state["saved_notes"] = load_saved_notes()
+
 # -------------------------------------------------------------
-# SYSTEM PROMPT FOR LOK SEWA AGRICULTURE COACH
+# PDF GENERATION ENGINE
+# -------------------------------------------------------------
+def sanitize_for_pdf(text: str) -> str:
+    """Safely encodes characters so standard PDF fonts never raise Unicode errors."""
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+def generate_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes:
+    """Creates an A4 PDF formatted for Lok Sewa examinations."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=36,
+        bottomMargin=36
+    )
+    
+    styles = getSampleStyleSheet()
+    
+    header_style = ParagraphStyle(
+        'Header',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=12,
+        leading=15,
+        textColor=colors.HexColor('#1b5e20'),
+        alignment=1
+    )
+    sub_header = ParagraphStyle(
+        'SubHeader',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8,
+        leading=11,
+        textColor=colors.HexColor('#555555'),
+        alignment=1
+    )
+    q_box = ParagraphStyle(
+        'QBox',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9.5,
+        leading=13,
+        textColor=colors.HexColor('#0d47a1'),
+        spaceBefore=4,
+        spaceAfter=6
+    )
+    h1_style = ParagraphStyle(
+        'H1',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9.5,
+        leading=13,
+        textColor=colors.HexColor('#1b5e20'),
+        spaceBefore=7,
+        spaceAfter=3
+    )
+    body_style = ParagraphStyle(
+        'Body',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8.5,
+        leading=12,
+        textColor=colors.HexColor('#212121'),
+        spaceAfter=3
+    )
+    bullet_style = ParagraphStyle(
+        'Bullet',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8.5,
+        leading=12,
+        leftIndent=12,
+        spaceAfter=2
+    )
+
+    story = []
+    
+    # Official Header
+    story.append(Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL", header_style))
+    story.append(Paragraph("Nepal Agricultural Service | Gazetted Third Class (Technical Officer / कृषि अधिकृत)", sub_header))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1b5e20'), spaceBefore=4, spaceAfter=8))
+    
+    # Question Metadata
+    clean_q = sanitize_for_pdf(question)
+    story.append(Paragraph(f"<b>QUESTION [{marks} Marks]:</b> {clean_q}", q_box))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cccccc'), spaceBefore=2, spaceAfter=6))
+    
+    # Parse Markdown lines into structured PDF elements
+    lines = answer_markdown.split("\n")
+    in_mermaid = False
+    
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+            
+        if "```mermaid" in line:
+            in_mermaid = True
+            story.append(Paragraph("<b>[PROCESS FLOW / CONCEPTUAL DIAGRAM]</b>", h1_style))
+            continue
+        elif in_mermaid and "```" in line:
+            in_mermaid = False
+            continue
+        elif in_mermaid:
+            clean_flow = line.replace("-->", " -> ").replace("[", "").replace("]", "")
+            story.append(Paragraph(f"&bull; {sanitize_for_pdf(clean_flow)}", bullet_style))
+            continue
+            
+        # Headings
+        if line.startswith("#"):
+            clean_h = re.sub(r"^#+\s*", "", line)
+            story.append(Paragraph(f"<b>{sanitize_for_pdf(clean_h)}</b>", h1_style))
+        # Bullet points
+        elif line.startswith("-") or line.startswith("*") or (len(line) > 2 and line[0].isdigit() and line[1] in [".", ")"]):
+            clean_bullet = re.sub(r"^[-*]\s*", "", line)
+            clean_bullet = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", clean_bullet)
+            story.append(Paragraph(f"&bull; {sanitize_for_pdf(clean_bullet)}", bullet_style))
+        else:
+            clean_body = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", line)
+            story.append(Paragraph(sanitize_for_pdf(clean_body), body_style))
+            
+    doc.build(story)
+    return buffer.getvalue()
+
+# -------------------------------------------------------------
+# LOK SEWA HIGH-SCORING SYSTEM PROMPT
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = """
-You are an expert Nepal Lok Sewa Aayog answer-writing coach and strict evaluator for the Nepal Agricultural Service (Gazetted Third Class / रा.प. तृतीय श्रेणी - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).
+You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service (Gazetted Third Class / रा.प. तृतीय श्रेणी - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).
 
-Your task is to produce a high-scoring, examiner-friendly Lok Sewa examination answer following these strict rules:
+Your mission is to produce high-scoring, concise, examiner-friendly answers tailored for the 3-hour written exam.
+Do NOT write endless superficial bullet points. In a real exam, candidates have only ~13-14 minutes per 10-mark question. Provide FEWER, PUNCHY, HIGH-IMPACT, EASY-TO-REMEMBER points.
 
-1. CORE STRUCTURE (MANDATORY IN EVERY ANSWER):
-   - [Question Heading & Marks Allotment]
-   - 1. Introduction: 2-4 sentences defining concept, core issue, and direct relevance. No historical filler.
-   - 2. Current Scenario / Ground Reality in Nepal: Latest credible facts, figures, statistics (from MoALD, NSO/CBS, Economic Survey, ADS 2015-2035, Periodic Plan).
-   - 3. Policy, Legal & Constitutional Framework: Constitution of Nepal (Articles/Schedules), Sectoral Acts, Regulations, Policies, ADS, SDGs.
-   - 4. Mandatory Process Diagram / Flowchart: Compulsory ASCII or text-based diagram illustrating the value chain, cycle, or institutional workflow.
-   - 5. Main Analytical Body: POINT -> EXPLANATION -> PRACTICAL IMPLICATION / NEPAL CONTEXT.
-   - 6. Key Challenges / Institutional Gaps: Categorized (Structural, Technical, Institutional, Governance, Input/Market).
-   - 7. Way Forward / Practical Recommendations: Categorized across Federal, Provincial, and Local government levels where relevant.
-   - 8. Mnemonic for Quick Recall: A clear mnemonic (using English or Nepali words) summarizing the core points for exam revision.
-   - 9. Conclusion: Concise, forward-looking (Policy -> Implementation -> Outcome).
+MANDATORY AUTHENTIC DATA BASELINE TO USE:
+1. Economic Survey 2080/81: Agriculture contributes 24.09% to national GDP; AGDP annual growth rate is ~3.05%.
+2. National Sample Census of Agriculture 2078 (NSO):
+   - 4.13 million farm holdings (62% of households depend on agriculture).
+   - Total agricultural land: 2.218 million hectares.
+   - Average holding size: 0.55 ha (heavily fragmented, ~2.8 parcels/holding).
+   - Only 54.5% of agricultural land has access to irrigation, and barely 1/3rd has year-round irrigation.
+3. 16th Periodic Plan (2081/82 - 2085/86): Priority on structural transformation, production clusters, commercial value chains, and import substitution.
+4. ADS (2015-2035): 4 Core Pillars (Governance, Productivity, Commercialization, Competitiveness).
+5. Legal Foundations: Constitution of Nepal (Art. 36: Right to Food & Food Sovereignty; Art. 51(h): Agriculture Policies; Schedules 5, 6, 7, 8, 9 for jurisdiction).
 
-2. MARKS-BASED DEPTH CALIBRATION:
-   - 5 Marks: Crisp, concise, ~1.5 pages equivalent, 6-8 core analytical points.
-   - 10 Marks: Detailed, ~2.5 to 3 pages equivalent, 12-14 substantive points with deep policy & institutional linkages.
-   - 15 Marks: Multi-dimensional, deep federalism lens, detailed institutional responsibility matrix.
-
-3. TONE & PRESENTATION:
-   - Examiner-friendly: Short paragraphs, clear bold headings, numbered bullets.
-   - Think like a Government Officer (Administrative + Practical + Technical).
-   - Never invent inaccurate article numbers or fictitious data; provide qualitative indicators if an exact figure is unverified.
-"""
-
-# -------------------------------------------------------------
-# HELPER FUNCTIONS
-# -------------------------------------------------------------
-def get_groq_client(api_key: str):
-    if not api_key:
-        return None
-    return Groq(api_key=api_key)
-
-def auto_detect_best_vision_model(client):
-    """Automatically selects the best active multimodal vision model available on Groq."""
-    try:
-        available_ids = [m.id for m in client.models.list().data]
-        vision_hierarchy = [
-            "qwen/qwen3.8-27b",
-            "qwen/qwen3.6-27b"
-        ]
-        for model in vision_hierarchy:
-            if model in available_ids:
-                return model
-        for m_id in available_ids:
-            if "vision" in m_id.lower() or "qwen" in m_id.lower():
-                return m_id
-        return "qwen/qwen3.8-27b"
-    except Exception:
-        return "qwen/qwen3.8-27b"
-
-def auto_detect_best_text_model(client):
-    """Automatically selects the highest tier reasoning/writing model."""
-    try:
-        available_ids = [m.id for m in client.models.list().data]
-        text_hierarchy = [
-            "llama-3.3-70b-versatile",
-            "openai/gpt-oss-120b",
-            "llama-3.1-70b-versatile",
-            "llama-3.1-8b-instant"
-        ]
-        for model in text_hierarchy:
-            if model in available_ids:
-                return model
-        return "llama-3.3-70b-versatile"
-    except Exception:
-        return "llama-3.3-70b-versatile"
-
-def preprocess_and_encode_image(image: Image.Image) -> str:
-    """Resizes high-res images to max 1280px to drastically reduce token consumption."""
-    if image.mode in ("RGBA", "P"):
-        image = image.convert("RGB")
-    
-    # Resize if larger than 1280px on any side
-    max_dimension = 1280
-    if max(image.size) > max_dimension:
-        image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-        
-    buffered = io.BytesIO()
-    image.save(buffered, format="JPEG", quality=85)
-    return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-def extract_questions_from_image(client, image: Image.Image, vision_model: str):
-    """Uses Groq Vision with tight token limits to prevent 429 OTPM errors."""
-    base64_image = preprocess_and_encode_image(image)
-    
-    extraction_prompt = """
-    Examine this exam paper image. Extract and transcribe ALL questions concisely.
-    Number each question (Q1, Q2, Q3...). Include marks if shown (e.g. [5], [10]).
-    Output ONLY the questions. No intro, no conversational text.
-    """
-    
-    # max_tokens MUST be <= 800 to avoid Groq's 1000 OTPM rate limit on the free tier
-    response = client.chat.completions.create(
-        model=vision_model,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": extraction_prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    }
-                ]
-            }
-        ],
-        temperature=0.1,
-        max_tokens=750,  # Safely stays below the 1000 OTPM limit
-    )
-    return response.choices[0].message.content
-
-def generate_loksewa_answer(client, question_text: str, marks: int, text_model: str, retries=2):
-    """Generates the Lok Sewa answer with automatic retry on temporary rate limits."""
-    user_prompt = f"""
-    Write a comprehensive, high-scoring examination answer for the following Lok Sewa Aayog (Nepal Agricultural Service) question:
-    
-    QUESTION: {question_text}
-    MARKS ALLOTTED: {marks} Marks
-    
-    Strictly follow this structure:
-    1. Introduction (concise, 2-4 sentences, concept & importance)
-    2. Current Scenario / Ground Reality in Nepal (Latest credible facts/data: MoALD, CBS, ADS)
-    3. Policy, Legal & Constitutional Framework (Constitution, Sectoral Acts, Policies)
-    4. Text-based Flowchart / Diagram (MANDATORY ASCII/Text diagram)
-    5. Main Analytical Body (Point -> Explanation -> Practical Implication)
-    6. Key Challenges / Institutional Gaps
-    7. Way Forward / Practical Measures (Separated by Federal, Provincial, Local levels)
-    8. Mnemonic for Quick Recall (English / Nepali words)
-    9. Conclusion (Policy -> Implementation -> Outcome)
-    """
-    
-    for attempt in range(retries + 1):
-        try:
-            response = client.chat.completions.create(
-                model=text_model,
-                messages=[
-                    {"role": "system", "content": LOKSEWA_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.2,
-                max_tokens=3500,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            if "429" in str(e) and attempt < retries:
-                time.sleep(5)  # Back off for 5 seconds on rate limit
-                continue
-            raise e
-
-# -------------------------------------------------------------
-# SIDEBAR
-# -------------------------------------------------------------
-with st.sidebar:
-    st.title("⚙️ Configuration")
-    groq_api_key = st.text_input(
-        "Groq API Key", 
-        type="password", 
-        value=os.getenv("GROQ_API_KEY", ""),
-        help="Paste your API key from console.groq.com"
-    )
-    
-    st.markdown("---")
-    st.success("⚡ **Auto-Engine Active**")
-    st.caption("• **Vision:** Auto-locks to Multimodal OCR (Optimized for <1000 OTPM)\n• **Writing:** Flagship 70B Reasoning Model")
-    st.markdown("---")
-    st.info("🎯 **Target Examination:**\nNepal Agricultural Service\nGazetted Third Class (Officer Level)")
-
-# -------------------------------------------------------------
-# MAIN APP BODY
-# -------------------------------------------------------------
-st.title("🌾 Lok Sewa Aayog Agriculture Answer Generator")
-st.caption("Nepal Agricultural Service | Gazetted Third Class (Technical Officer / कृषि अधिकृत)")
-
-if not groq_api_key:
-    st.warning("👈 Please enter your Groq API Key in the left sidebar to begin.")
-    st.stop()
-
-# Initialize client and auto-detect models
-client = get_groq_client(groq_api_key)
-vision_engine = auto_detect_best_vision_model(client)
-text_engine = auto_detect_best_text_model(client)
-
-tab1, tab2 = st.tabs(["📸 Question Paper Photo Upload (Up to 12 Questions)", "✍️ Single Question Direct Input"])
-
-# =============================================================
-# TAB 1: PHOTO UPLOAD
-# =============================================================
-with tab1:
-    st.subheader("Upload Exam Paper Snapshot")
-    st.write("Upload a photo containing up to 12 questions. The AI will extract and structure them.")
-    
-    uploaded_file = st.file_uploader("Upload Question Paper (JPG, PNG)...", type=["jpg", "jpeg", "png"])
-    
-    if uploaded_file is not None:
-        col_img, col_act = st.columns([1, 1])
-        image = Image.open(uploaded_file)
-        
-        with col_img:
-            st.image(image, caption="Uploaded Paper", use_container_width=True)
-            
-        with col_act:
-            if st.button("🔍 Extract All Questions from Image", type="primary", use_container_width=True):
-                with st.spinner("Processing image and extracting questions (optimized for token limits)..."):
-                    try:
-                        extracted_text = extract_questions_from_image(client, image, vision_engine)
-                        st.session_state["extracted_questions_raw"] = extracted_text
-                        
-                        # Parse lines into clean question list
-                        lines = [q.strip() for q in extracted_text.split("\n") if q.strip() and (q[0].isdigit() or q.upper().startswith("Q"))]
-                        st.session_state["parsed_questions"] = lines if lines else [extracted_text]
-                        st.success("✅ Questions extracted successfully!")
-                    except Exception as e:
-                        st.error(f"Error during extraction: {str(e)}")
-
-    if "extracted_questions_raw" in st.session_state:
-        st.markdown("---")
-        st.subheader("📋 Extracted Questions")
-        st.text_area("Extracted List (Verify or adjust if needed):", 
-                     value=st.session_state["extracted_questions_raw"], 
-                     height=180, 
-                     key="editable_questions")
-        
-        question_list = st.session_state.get("parsed_questions", [])
-        
-        mode = st.radio("Select answering mode:", ["Answer a Specific Question", "Answer ALL Questions Sequentially"], horizontal=True)
-        
-        if mode == "Answer a Specific Question":
-            selected_q = st.selectbox("Select question to answer:", question_list)
-            q_marks = st.selectbox("Select Marks:", [5, 10, 15], index=1)
-            
-            if st.button("🚀 Generate Lok Sewa Answer", type="primary"):
-                with st.spinner("Drafting answer with facts, flowchart, and mnemonics..."):
-                    try:
-                        ans = generate_loksewa_answer(client, selected_q, q_marks, text_engine)
-                        st.markdown("---")
-                        st.markdown(ans)
-                        st.download_button("📥 Download Answer as Markdown", data=ans, file_name="loksewa_answer.md", mime="text/markdown")
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
-                        
-        else: # Bulk answering
-            bulk_marks = st.selectbox("Default Marks per question:", [5, 10, 15], index=1)
-            if st.button("🚀 Generate Answers for ALL Extracted Questions", type="primary"):
-                all_answers = []
-                progress_bar = st.progress(0)
-                total_q = len(question_list)
-                
-                for idx, q_item in enumerate(question_list):
-                    st.write(f"✍️ **Generating answer for {idx+1}/{total_q}:** {q_item}")
-                    try:
-                        ans = generate_loksewa_answer(client, q_item, bulk_marks, text_engine)
-                        all_answers.append(f"# {q_item}\n\n{ans}\n\n---\n")
-                    except Exception as e:
-                        all_answers.append(f"# {q_item}\n\nFailed to generate: {str(e)}\n\n---\n")
-                    
-                    progress_bar.progress((idx + 1) / total_q)
-                    # Short pause to prevent hitting rate limits during bulk generation
-                    if idx < total_q - 1:
-                        time.sleep(2)
-                
-                final_combined = "\n\n".join(all_answers)
-                st.success("✅ All answers generated!")
-                st.markdown(final_combined)
-                st.download_button("📥 Download Complete Answer Set", data=final_combined, file_name="all_loksewa_answers.md", mime="text/markdown")
-
-# =============================================================
-# TAB 2: MANUAL SINGLE QUESTION INPUT
-# =============================================================
-with tab2:
-    st.subheader("Type or Paste Question")
-    single_question = st.text_area("Enter question here (English or Nepali):", 
-                                  placeholder="e.g., Explain the importance and seed certification procedures of major cereal crops in Nepal. [10 marks]",
-                                  height=120)
-    
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        marks = st.selectbox("Marks Weightage:", [5, 10, 15], index=1, key="single_marks")
-        
-    if st.button("🚀 Generate Answer", type="primary", key="btn_single"):
-        if not single_question.strip():
-            st.warning("Please enter a question first.")
-        else:
-            with st.spinner("Formulating structured Lok Sewa answer..."):
-                try:
-                    answer = generate_loksewa_answer(client, single_question, marks, text_engine)
-                    st.markdown("---")
-                    st.markdown(answer)
-                    st.download_button("📥 Download Answer as Markdown", data=answer, file_name="single_loksewa_answer.md", mime="text/markdown")
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+STRICT ANSWER ARCHITECTURE:
+1. **Concise Introduction (2-3 sentences):** Direct definition, scope, and strategic importance.
+2. **Current Scenario & Data Snapshot:** Exactly 3-4 bullet points citing verified data (Economic Survey 2080/81, Census 2078, 16th Plan).
+3. **Mermaid Flowchart (MANDATORY):**
+   Output a valid, clean Mermaid code block:
+   ```mermaid
+   graph TD
+   A[Input / Source] --> B[Processing / Action]
+   B --> C[Outcome / Market]
