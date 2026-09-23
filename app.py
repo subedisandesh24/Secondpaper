@@ -11,11 +11,14 @@ from groq import Groq
 from PIL import Image
 import io
 
-# ReportLab imports for PDF Generation
+# ReportLab imports for High-Grade PDF Publishing
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak, Table, TableStyle, KeepTogether
+)
 from reportlab.lib import colors
+from reportlab.pdfgen import canvas
 
 # Constant for triple backticks to avoid markdown copy truncation
 TRIPLE_BACKTICKS = chr(96) * 3
@@ -48,7 +51,58 @@ if "saved_notes" not in st.session_state:
     st.session_state["saved_notes"] = load_saved_notes()
 
 # -------------------------------------------------------------
-# CRASH-PROOF PDF TEXT SANITIZER
+# TWO-PASS NUMBERED CANVAS (PAGE X OF Y + RUNNING HEADERS)
+# -------------------------------------------------------------
+class LokSewaNumberedCanvas(canvas.Canvas):
+    """Dynamically calculates total page count and prints running headers/footers."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_decorations(num_pages)
+            super().showPage()
+        super().save()
+
+    def draw_decorations(self, page_count):
+        self.saveState()
+        # Suppress headers/footers on cover/first page if multi-page dossier
+        if self._pageNumber == 1 and page_count > 1:
+            self.restoreState()
+            return
+            
+        self.setFont("Helvetica-Bold", 7.5)
+        self.setFillColor(colors.HexColor('#1b5e20'))
+        self.drawString(40, 810, "PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) — NEPAL")
+        
+        self.setFont("Helvetica", 7.5)
+        self.setFillColor(colors.HexColor('#555555'))
+        self.drawRightString(555, 810, "Nepal Agricultural Service | Gazetted 3rd Class")
+        
+        self.setStrokeColor(colors.HexColor('#1b5e20'))
+        self.setLineWidth(1)
+        self.line(40, 804, 555, 804)
+
+        # Footer
+        self.setStrokeColor(colors.HexColor('#cccccc'))
+        self.setLineWidth(0.5)
+        self.line(40, 42, 555, 42)
+        
+        self.setFont("Helvetica", 7.5)
+        self.setFillColor(colors.HexColor('#777777'))
+        self.drawString(40, 30, "Confidential Exam Revision Dossier | Verified Post-2024 Standards")
+        self.drawRightString(555, 30, f"Page {self._pageNumber} of {page_count}")
+        self.restoreState()
+
+# -------------------------------------------------------------
+# ADVANCED PDF FORMATTER (READ-FRIENDLY & INTERESTING)
 # -------------------------------------------------------------
 def safe_pdf_text(raw_text: str) -> str:
     """Escapes raw XML/HTML characters (<, >, &) to prevent paraparser crashes."""
@@ -61,116 +115,283 @@ def safe_pdf_text(raw_text: str) -> str:
     return escaped.encode("latin-1", "replace").decode("latin-1")
 
 def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
+    """Converts an answer into a styled, reader-friendly document section."""
     styles = getSampleStyleSheet()
-    
-    q_box = ParagraphStyle(
-        f'QBox_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=14, textColor=colors.HexColor('#0d47a1'), spaceBefore=6, spaceAfter=6
+    content_width = 515  # 595 - 80 margins
+
+    # Typography styles
+    q_badge_style = ParagraphStyle(
+        f'QBadge_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=11, textColor=colors.HexColor('#0d47a1')
+    )
+    q_title_style = ParagraphStyle(
+        f'QTitle_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10.5, leading=15, textColor=colors.HexColor('#0f172a')
     )
     h1_style = ParagraphStyle(
-        f'H1_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#1b5e20'), spaceBefore=7, spaceAfter=3
+        f'H1_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#1b5e20'), spaceBefore=8, spaceAfter=4
     )
     body_style = ParagraphStyle(
-        f'Body_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, textColor=colors.HexColor('#212121'), spaceAfter=3
+        f'Body_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12.5, textColor=colors.HexColor('#1f2937'), spaceAfter=3.5
     )
     bullet_style = ParagraphStyle(
-        f'Bullet_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, leftIndent=12, spaceAfter=2
+        f'Bullet_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12.5, leftIndent=12, spaceAfter=2.5
+    )
+    story_text_style = ParagraphStyle(
+        f'StoryTxt_{q_num}', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8.5, leading=13, textColor=colors.HexColor('#78350f')
+    )
+    flow_step_style = ParagraphStyle(
+        f'FlowTxt_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11.5, textColor=colors.HexColor('#14532d')
+    )
+    tbl_hdr_style = ParagraphStyle(
+        f'TblHdr_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.white, alignment=1
+    )
+    tbl_cell_style = ParagraphStyle(
+        f'TblCell_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10.5, textColor=colors.HexColor('#1f2937')
     )
 
     story = []
-    prefix = f"QUESTION #{q_num}" if q_num else "QUESTION"
-    story.append(Paragraph(f"<b>{prefix} [{marks} Marks]:</b> {safe_pdf_text(question)}", q_box))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cccccc'), spaceBefore=2, spaceAfter=6))
-    
+
+    # 1. QUESTION HEADER CARD (NAVY & ICE-BLUE)
+    q_prefix = f"QUESTION {q_num:02d}" if q_num else "QUESTION"
+    card_data = [
+        [Paragraph(f"<b>{q_prefix} &nbsp;|&nbsp; WEIGHTAGE: {marks} MARKS</b>", q_badge_style)],
+        [Paragraph(safe_pdf_text(question), q_title_style)]
+    ]
+    q_card = Table(card_data, colWidths=[content_width])
+    q_card.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f0f6ff')),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#bfdbfe')),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 2),
+        ('TOPPADDING', (0, 1), (-1, 1), 2),
+        ('BOTTOMPADDING', (0, 1), (-1, 1), 7),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    story.append(q_card)
+    story.append(Spacer(1, 8))
+
+    # Parse answer markdown lines
     lines = answer_markdown.split("\n")
     in_mermaid = False
-    
+    mermaid_lines = []
+    in_table = False
+    table_rows = []
+
     for raw_line in lines:
         line = raw_line.strip()
         if not line:
             continue
-            
+
+        # Handle Mermaid diagram block
         if f"{TRIPLE_BACKTICKS}mermaid" in line:
             in_mermaid = True
-            story.append(Paragraph("<b>[PROCESS FLOW / CONCEPTUAL DIAGRAM]</b>", h1_style))
+            mermaid_lines = []
             continue
         elif in_mermaid and TRIPLE_BACKTICKS in line:
             in_mermaid = False
+            # Render a stepped visual process card
+            flow_flowables = [
+                Paragraph("<b>PROCESS FLOW & LOGICAL MECHANISM:</b>", ParagraphStyle('FTitle', fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4))
+            ]
+            step_idx = 1
+            for m_line in mermaid_lines:
+                clean_step = m_line.replace("-->", " &rarr; ").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' ').strip()
+                if clean_step and not clean_step.lower().startswith(('graph', 'flowchart', 'subgraph', 'end')):
+                    flow_flowables.append(Paragraph(f"<b>[Step {step_idx:02d}]</b> {safe_pdf_text(clean_step)}", flow_step_style))
+                    flow_flowables.append(Paragraph("&nbsp;&nbsp;&nbsp;&nbsp;&darr;", ParagraphStyle('Arr', fontName='Helvetica-Bold', fontSize=7.5, textColor=colors.HexColor('#16a34a'))))
+                    step_idx += 1
+            if len(flow_flowables) > 2:
+                flow_flowables.pop()  # Remove trailing arrow
+                
+            flow_card = Table([[flow_flowables]], colWidths=[content_width])
+            flow_card.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f0fdf4')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#bbf7d0')),
+                ('PADDING', (0, 0), (-1, -1), 8),
+            ]))
+            story.append(Spacer(1, 4))
+            story.append(flow_card)
+            story.append(Spacer(1, 6))
             continue
         elif in_mermaid:
-            clean_flow = line.replace("-->", " &darr; ").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' ')
-            story.append(Paragraph(f"&bull; {safe_pdf_text(clean_flow)}", bullet_style))
+            mermaid_lines.append(line)
             continue
-            
+
+        # Handle Markdown Data Tables
+        if line.startswith("|") and line.endswith("|"):
+            cells = [c.strip() for c in line.split("|")[1:-1]]
+            if not cells or all(c == "" or set(c) <= set("-:") for c in cells):
+                continue
+            table_rows.append(cells)
+            in_table = True
+            continue
+        elif in_table:
+            if table_rows:
+                # Convert collected rows to styled table
+                col_w = content_width / len(table_rows[0])
+                t_data = []
+                for r_idx, row in enumerate(table_rows):
+                    p_row = []
+                    for c_txt in row:
+                        if r_idx == 0:
+                            p_row.append(Paragraph(f"<b>{safe_pdf_text(c_txt)}</b>", tbl_hdr_style))
+                        else:
+                            p_row.append(Paragraph(safe_pdf_text(c_txt), tbl_cell_style))
+                    t_data.append(p_row)
+                    
+                table_obj = Table(t_data, colWidths=[col_w] * len(table_rows[0]))
+                table_obj.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1b5e20')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
+                    ('PADDING', (0, 0), (-1, -1), 4.5),
+                ]))
+                story.append(table_obj)
+                story.append(Spacer(1, 6))
+            table_rows = []
+            in_table = False
+
+        # Handle English Memory Story Mnemonic (Warm Golden Box)
+        if "memory story" in line.lower() or "mnemonic" in line.lower() or "rapid recall" in line.lower():
+            story_box_data = [
+                [Paragraph("<b>RAPID RECALL MEMORY STORY (EXAM REVISION ANCHOR):</b>", ParagraphStyle('StryHdr', fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#92400e')))],
+                [Paragraph(safe_pdf_text(line), story_text_style)]
+            ]
+            story_card = Table(story_box_data, colWidths=[content_width])
+            story_card.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fffbeb')),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#fde68a')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ]))
+            story.append(Spacer(1, 4))
+            story.append(story_card)
+            story.append(Spacer(1, 6))
+            continue
+
+        # Handle Headings
         if line.startswith("#"):
             clean_h = re.sub(r"^#+\s*", "", line)
-            story.append(Paragraph(f"<b>{safe_pdf_text(clean_h)}</b>", h1_style))
-        elif line.startswith("-") or line.startswith("*") or (len(line) > 2 and line[0].isdigit() and line[1] in [".", ")"]):
+            story.append(Paragraph(f"<b>{safe_pdf_text(clean_h).upper()}</b>", h1_style))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e2e8f0'), spaceBefore=1, spaceAfter=4))
+        # Handle Bullets
+        elif line.startswith(("-", "*")) or (len(line) > 2 and line[0].isdigit() and line[1] in [".", ")"]):
             clean_bullet = re.sub(r"^[-*]\s*", "", line)
-            story.append(Paragraph(f"&bull; {safe_pdf_text(clean_bullet)}", bullet_style))
+            clean_bullet = re.sub(r"^\d+[\.\)]\s*", "", clean_bullet)
+            story.append(Paragraph(f"&bull;&nbsp;&nbsp;{safe_pdf_text(clean_bullet)}", bullet_style))
         else:
             story.append(Paragraph(safe_pdf_text(line), body_style))
-            
+
     return story
 
 def generate_single_pdf_bytes(question: str, marks: int, answer_markdown: str) -> bytes:
+    """Creates a publication-grade single answer PDF."""
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=36, bottomMargin=36)
-    styles = getSampleStyleSheet()
-    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, leading=15, textColor=colors.HexColor('#1b5e20'), alignment=1)
-    sub_header = ParagraphStyle('SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11, textColor=colors.HexColor('#555555'), alignment=1)
-
-    story = [
-        Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL", header_style),
-        Paragraph("Nepal Agricultural Service | Gazetted Third Class (Technical Officer / कृषि अधिकृत)", sub_header),
-        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1b5e20'), spaceBefore=4, spaceAfter=8)
-    ]
-    story.extend(build_pdf_story_for_qa(question, marks, answer_markdown))
-    doc.build(story)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=48, bottomMargin=48)
+    story = build_pdf_story_for_qa(question, marks, answer_markdown)
+    doc.build(story, canvasmaker=LokSewaNumberedCanvas)
     return buffer.getvalue()
 
-def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWERS") -> bytes:
+def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MASTER DOSSIER") -> bytes:
+    """Creates an exam workbook with an Executive Index page for all questions."""
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=36, bottomMargin=36)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=48, bottomMargin=48)
+    content_width = 515
     styles = getSampleStyleSheet()
-    header_style = ParagraphStyle('HeaderBulk', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=colors.HexColor('#1b5e20'), alignment=1)
-    sub_header = ParagraphStyle('SubHeaderBulk', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#555555'), alignment=1)
 
-    story = [
-        Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) - NEPAL", header_style),
-        Paragraph(f"Nepal Agricultural Service | {title}", sub_header),
-        HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#1b5e20'), spaceBefore=4, spaceAfter=10)
-    ]
+    story = []
+
+    # 1. DOSSIER COVER / HEADER BLOCK
+    banner_style = ParagraphStyle('DossierBanner', fontName='Helvetica-Bold', fontSize=14, leading=18, textColor=colors.HexColor('#1b5e20'), alignment=1)
+    sub_banner = ParagraphStyle('SubBanner', fontName='Helvetica', fontSize=9, leading=12, textColor=colors.HexColor('#475569'), alignment=1)
+
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("PUBLIC SERVICE COMMISSION (LOK SEWA AAYOG) — NEPAL", banner_style))
+    story.append(Paragraph("Nepal Agricultural Service &bull; Gazetted Third Class (Technical Officer / कृषि अधिकृत)", sub_banner))
+    story.append(Spacer(1, 4))
+    story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1b5e20'), spaceBefore=4, spaceAfter=14))
+
+    # 2. EXECUTIVE INDEX TABLE
+    story.append(Paragraph("<b>TABLE OF CONTENTS &bull; QUESTION ROSTER:</b>", ParagraphStyle('IdxHdr', fontName='Helvetica-Bold', fontSize=9.5, textColor=colors.HexColor('#0f172a'), spaceAfter=6)))
     
+    index_data = [
+        [
+            Paragraph("<b>S.N.</b>", ParagraphStyle('TH1', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=1)),
+            Paragraph("<b>QUESTION TOPIC / TITLE</b>", ParagraphStyle('TH2', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white)),
+            Paragraph("<b>MARKS</b>", ParagraphStyle('TH3', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=1))
+        ]
+    ]
     for idx, item in enumerate(qa_list):
-        q_story = build_pdf_story_for_qa(item["question"], item.get("marks", 10), item["answer"], q_num=idx + 1)
+        short_q = item['question'][:85] + "..." if len(item['question']) > 85 else item['question']
+        index_data.append([
+            Paragraph(f"<b>#{idx+1:02d}</b>", ParagraphStyle('TD1', fontName='Helvetica', fontSize=8, alignment=1)),
+            Paragraph(safe_pdf_text(short_q), ParagraphStyle('TD2', fontName='Helvetica', fontSize=8)),
+            Paragraph(f"<b>{item.get('marks', 10)}</b>", ParagraphStyle('TD3', fontName='Helvetica', fontSize=8, alignment=1))
+        ])
+
+    idx_table = Table(index_data, colWidths=[40, 415, 60])
+    idx_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1b5e20')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
+        ('TOPPADDING', (0, 0), (-1, -1), 4.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4.5),
+    ]))
+    story.append(idx_table)
+    story.append(Spacer(1, 15))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cbd5e1'), spaceBefore=8, spaceAfter=12))
+    story.append(PageBreak())  # Questions start fresh on Page 2
+
+    # 3. CONCATENATE ALL QUESTIONS WITH SECTION SEPARATORS
+    for idx, item in enumerate(qa_list):
+        q_story = build_pdf_story_for_qa(
+            item["question"],
+            item.get("marks", 10),
+            item["answer"],
+            q_num=idx + 1
+        )
         story.extend(q_story)
         if idx < len(qa_list) - 1:
             story.append(Spacer(1, 15))
-            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#e0e0e0'), spaceBefore=10, spaceAfter=15))
-            story.append(PageBreak())
-            
-    doc.build(story)
+            story.append(PageBreak())  # Clean break between questions for readability
+
+    doc.build(story, canvasmaker=LokSewaNumberedCanvas)
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT (NARC, DoA, PQPMC, SQCC, PMAMP ANCHORS)
+# LOK SEWA SYSTEM PROMPT (POST-2024 REVISED DATA & DIRECTIVES)
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service "
     "(Gazetted Third Class / रा.प. तृतीय श्रेणी - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
     "Your mission is to produce high-scoring, concise, examiner-friendly answers tailored for the 3-hour written exam.\n"
     "Provide FEWER, PUNCHY, HIGH-IMPACT, EASY-TO-REMEMBER points suitable for a 13-14 minute writing window.\n\n"
-    "MANDATORY CITATION OF OFFICIAL PUBLICATIONS & INSTITUTIONAL SOURCES:\n"
-    "Whenever discussing technical practices, standards, data, or policies, explicitly cite the relevant authoritative bodies:\n"
-    "1. NARC (Nepal Agricultural Research Council): Variety release bulletins, Package of Practices (PoP), commodity research reports (NMRP, NRRP, NWRP, NHRD), National Genebank publications.\n"
-    "2. DoA (Department of Agriculture): Official Krishi Diary (कृषि डायरी), crop calendars, IPM training modules, and technical pocket manuals.\n"
-    "3. PQPMC (Plant Quarantine & Pesticide Management Centre): Banned pesticide register (24 active ingredients), Rapid Bioassay for Pesticide Residue (RBPR) reports, Pest Risk Analysis (PRA) protocols, e-Phyto quarantine directives.\n"
-    "4. SQCC (Seed Quality Control Centre): Seed certification standards (germination %, purity %, moisture limits, isolation distance in meters), notified varieties catalogue, National Seed Balance Sheet.\n"
-    "5. PMAMP (Prime Minister Agriculture Modernization Project): 4-tier model (Pocket, Block, Zone, Superzone), Custom Hiring Centre (CHC) norms, post-harvest and commercial corridor processing hubs.\n"
-    "6. Projects (Federal & Provincial): REED (Rural Enterprise & Economic Development), FANSEP, Smart Agriculture Village Program (स्मार्ट कृषि गाउँ - provincial MoLMAC), and AKC frontline technical delivery.\n\n"
-    "DYNAMIC TECHNICAL DATA MANDATE:\n"
-    "- Never dump the same generic macro-GDP data on every question.\n"
-    "- Generate topic-specific agronomic and technical metrics directly tied to the question (e.g., Economic Threshold Levels, spore germination temperatures, seed standards, soil pH ranges, benefit-cost ratios, chilling hours).\n\n"
+    "MANDATORY POST-2024 / 2081/2082 VERIFIED OFFICIAL STATISTICAL & INSTITUTIONAL BASELINE:\n"
+    "1. Macroeconomic Accounts (Post-2024 MoF & NSO Surveys):\n"
+    "   * Agriculture, Forestry & Fisheries share in GDP: 25.16% (Primary sector: ~25.2%, Industry: 12.83%, Services: 62.01%).\n"
+    "   * Economic Growth Rate (GDP Growth): 4.61%.\n"
+    "   * National GDP Size: NPR 61.07 Kharba (Rs. 6.107 Trillion).\n"
+    "   * Per Capita GNI: USD 1,517.\n"
+    "   * Cereal Production: National paddy harvest stands at 5.75 - 5.95 Million MT (average productivity ~4.14-4.19 MT/ha); Maize ~3.15M MT; Wheat ~2.18M MT.\n"
+    "2. PQPMC Banned Pesticides Gazette Update (December 2024 Notification):\n"
+    "   * Exactly 27 active ingredients are now banned in Nepal (December 2024 gazette added Paraquat, Chlorpyrifos, and Phorate).\n"
+    "   * Pesticide import volume: ~1,664 MT active ingredients.\n"
+    "3. SQCC & Seed Sector Updates:\n"
+    "   * Over 700+ notified crop varieties; Seed Replacement Rate (SRR: Paddy ~24%, Wheat ~22%, Maize ~20% against 25-33% national seed vision target).\n"
+    "4. Post-2024 Legislative & Policy Enactments:\n"
+    "   * National Agriculture Policy, 2081 (2024 AD) - Federalized execution, contract farming, climate resilience.\n"
+    "   * Agriculture Investment Decade, 2081-2091 (2024-2034 AD) - Public-Private-Cooperative financing.\n"
+    "   * Food Hygiene and Quality Act, 2081 (2024 AD) - Farm-to-fork standards, SPS compliance, traceability.\n"
+    "   * Pesticides Management Regulation, 2081 (2024 AD) - Framed under Pesticides Management Act 2076.\n"
+    "   * Plant Protection Regulation (First Amendment), 2080 (2024 AD).\n"
+    "   * 16th Periodic Plan (2081/82-2085/86) - Production corridors and structural agro-transformation.\n\n"
+    "DYNAMIC TECHNICAL DATA CITATION:\n"
+    "- NEVER blindly copy-paste the same general GDP data onto technical agronomy, pathology, soil, or horticulture questions.\n"
+    "- Provide genuine, domain-specific technical metrics (e.g., Economic Threshold Levels, spore germination temperatures, chilling hours, TSS/Brix, soil pH/SOM ranges, benefit-cost ratios, Seed Certification standards) citing NARC, DoA (Krishi Diary), PQPMC, SQCC, or PMAMP.\n\n"
     "CRITICAL MERMAID INSTRUCTIONS (DETAILED, COMPLETE & BEAUTIFULLY STRUCTURED):\n"
     "1. Do NOT limit flowcharts to 4 simple steps. Build a detailed, comprehensive, multi-stage model (5 to 8+ interconnected steps, branches, or feedback loops) that truly explains the technical mechanism.\n"
     "2. ALWAYS use Top-Down orientation: `graph TD`.\n"
@@ -184,7 +405,7 @@ LOKSEWA_SYSTEM_PROMPT = (
     "  * 📖 **Memory Story (Rapid Recall Narrative):** 'Farmer **Hari** first tested his **Soil & Certified Seed** (Inputs), adopted **AKC Extension Advice** (Technical Knowledge), stored his harvest in a **Cold Chain Hub** (Post-Harvest Infrastructure), and secured a direct contract via the **Cooperatives Value Chain** (Market Linkage) to achieve **Double Net Profit** (Economic Outcome).'\n\n"
     "STRICT ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences: concept, scope, importance)\n"
-    "2. Current Scenario & Topic-Specific Data Snapshot (Cite NARC/DoA/PQPMC/SQCC/PMAMP publications/data)\n"
+    "2. Current Scenario & Topic-Specific Data Snapshot (Cite post-2024 NARC/DoA/PQPMC/SQCC/PMAMP publications/data)\n"
     "3. Mandatory Mermaid Diagram / Process Model (Detailed Top-Down `graph TD` showing the full mechanism)\n"
     "4. Policy, Legal & Institutional Linkage (National Agri Policy 2081, 16th Plan, Food Hygiene Act 2081, PMAMP, SQCC/PQPMC Acts)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
@@ -198,18 +419,15 @@ LOKSEWA_SYSTEM_PROMPT = (
 # RESPONSIVE TOP-DOWN MERMAID RENDERING ENGINE
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
-    """Renders markdown text with an auto-fitting, responsive vertical Mermaid diagram without arbitrary height caps."""
+    """Renders markdown text with an auto-fitting, responsive vertical Mermaid diagram."""
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
     parts = re.split(mermaid_pattern, content_text)
     
     for part in parts:
         if part.startswith(f"{TRIPLE_BACKTICKS}mermaid"):
             mermaid_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
-            
-            # Ensure Top-Down orientation
             mermaid_code = re.sub(r'\b(graph|flowchart)\s+LR\b', r'\1 TD', mermaid_code, flags=re.IGNORECASE)
             
-            # Dynamic height calculation that gracefully expands for detailed diagrams
             line_count = len(mermaid_code.strip().split('\n'))
             dyn_height = min(950, max(320, line_count * 45 + 100))
             
@@ -361,10 +579,10 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     Adhere strictly to the required answer format:
     1. Concise Introduction (2-3 sentences: concept, scope, importance)
     2. Current Scenario & Topic-Specific Data Snapshot:
-       - Cite verified publications/data from NARC, DoA (Krishi Diary), PQPMC, SQCC, PMAMP, or relevant federal/provincial projects.
-       - Provide technical thresholds, ratios, standards, and metrics specific to this question's domain.
+       - Use latest post-2024 official data (Economic Survey: AGDP 25.16%, GDP Growth 4.61%, Paddy 5.75-5.95M MT; PQPMC updated 27 banned pesticides; SQCC 700+ varieties; SRR 24% rice / 22% wheat).
+       - Provide technical thresholds, ratios, and metrics directly relevant to this question's domain from NARC, DoA (Krishi Diary), PQPMC, SQCC, or PMAMP.
     3. Mermaid Diagram: MANDATORY Top-Down `graph TD`. Make it a detailed, comprehensive, multi-stage model (5 to 8+ steps) that fully captures the technical mechanism. Wrap all node labels in double quotes. Do NOT add meta comments like '(only 4 steps)'.
-    4. Policy, Legal & Institutional Linkage (Explicitly link to relevant Acts, NARC/DoA directives, PMAMP guidelines, SQCC seed standards, PQPMC quarantine/pesticide rules, or 16th Plan/National Agriculture Policy 2081)
+    4. Policy, Legal & Institutional Linkage (Explicitly cite National Agriculture Policy 2081, 16th Periodic Plan, Food Hygiene Act 2081, Agriculture Investment Decade 2081-2091, Pesticide Regulation 2081, or relevant sectoral acts)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
     6. Key Operational Challenges (4-5 points)
     7. Actionable Way Forward (Federal, Provincial, Local roles & Project linkages)
@@ -406,7 +624,7 @@ st.sidebar.markdown(f"### 📚 Saved Notes: **{saved_count}**")
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Anchored to NARC, DoA, PQPMC, SQCC & PMAMP Publications | English Story Mnemonics | Deep Flowcharts")
+st.caption("Post-2024 Verified Data Baseline | Executive PDF Publishing Engine | English Story Mnemonics")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -465,7 +683,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Preparing answer with institutional citations, detailed diagram, and story mnemonic..."):
+                with st.spinner("Preparing answer with post-2024 citations, detailed diagram, and story mnemonic..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -546,11 +764,11 @@ with tab1:
                 
                 col_b1, col_b2 = st.columns([1, 1])
                 with col_b1:
-                    bulk_pdf_bytes = generate_bulk_pdf_bytes(bulk_data, title="COMPLETE EXAM PAPER MODEL ANSWERS")
+                    bulk_pdf_bytes = generate_bulk_pdf_bytes(bulk_data, title="COMPLETE EXAM PAPER MASTER DOSSIER")
                     st.download_button(
-                        label=f"📥 Download ALL {len(bulk_data)} Answers as Single PDF",
+                        label=f"📥 Download ALL {len(bulk_data)} Answers as Single Executive PDF",
                         data=bulk_pdf_bytes,
-                        file_name=f"complete_exam_set_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        file_name=f"complete_exam_dossier_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                         mime="application/pdf",
                         type="primary",
                         use_container_width=True
@@ -574,7 +792,7 @@ with tab2:
     st.subheader("Type or Paste Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Explain the seed certification standards and field inspection procedures for hybrid maize production in Nepal citing SQCC and NARC guidelines. [10 marks]",
+        placeholder="e.g., Explain the recent updates in pesticide regulations in Nepal including the PQPMC banned list, and analyze alternative pest management options under IPM. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -585,7 +803,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please type a question.")
         else:
-            with st.spinner("Preparing answer with institutional citations, detailed diagram, and story mnemonic..."):
+            with st.spinner("Preparing answer with post-2024 verified publications, detailed diagram, and story mnemonic..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
@@ -638,11 +856,11 @@ with tab3:
     else:
         col_r1, col_r2 = st.columns([2, 1])
         with col_r1:
-            all_bank_pdf = generate_bulk_pdf_bytes(notes, title="MY COMPLETE REVISION BANK NOTES")
+            all_bank_pdf = generate_bulk_pdf_bytes(notes, title="MY COMPLETE REVISION BANK MASTER DOSSIER")
             st.download_button(
-                label=f"📥 Download Entire Revision Bank ({len(notes)} Questions) as Single PDF",
+                label=f"📥 Download Entire Revision Bank ({len(notes)} Questions) as Single Executive PDF",
                 data=all_bank_pdf,
-                file_name=f"complete_revision_bank_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                file_name=f"complete_revision_bank_dossier_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime="application/pdf",
                 type="primary",
                 use_container_width=True
