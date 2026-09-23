@@ -4,6 +4,7 @@ import base64
 import os
 import json
 import re
+import html
 import time
 from datetime import datetime
 from groq import Groq
@@ -23,7 +24,7 @@ TRIPLE_BACKTICKS = chr(96) * 3
 # PAGE CONFIGURATION
 # -------------------------------------------------------------
 st.set_page_config(
-    page_title="Lok Sewa Agri Officer Coach (2082/83 Updated)",
+    page_title="Lok Sewa Agri Officer Coach",
     page_icon="🌾",
     layout="wide"
 )
@@ -47,11 +48,25 @@ if "saved_notes" not in st.session_state:
     st.session_state["saved_notes"] = load_saved_notes()
 
 # -------------------------------------------------------------
-# PDF GENERATION ENGINES (SINGLE & BULK)
+# CRASH-PROOF PDF TEXT SANITIZER (FIXES PARAPARSER SYNTAX ERROR)
 # -------------------------------------------------------------
-def sanitize_for_pdf(text: str) -> str:
-    """Safely encodes characters so standard PDF fonts never raise Unicode errors."""
-    return text.encode("latin-1", "replace").decode("latin-1")
+def safe_pdf_text(raw_text: str) -> str:
+    """
+    Escapes raw XML/HTML characters (<, >, &) first, then converts
+    markdown bold/italic to valid tags, preventing reportlab paraparser crashes.
+    """
+    if not raw_text:
+        return ""
+    # 1. Escape HTML special characters
+    escaped = html.escape(raw_text)
+    # 2. Convert markdown bold **text** to <b>text</b>
+    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+    # 3. Convert markdown italic *text* to <i>text</i>
+    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+    # 4. Convert arrow notations cleanly
+    escaped = escaped.replace("-&gt;", " &rarr; ")
+    # 5. Latin-1 safe encode
+    return escaped.encode("latin-1", "replace").decode("latin-1")
 
 def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
     styles = getSampleStyleSheet()
@@ -97,8 +112,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
 
     story = []
     prefix = f"QUESTION #{q_num}" if q_num else "QUESTION"
-    clean_q = sanitize_for_pdf(question)
-    story.append(Paragraph(f"<b>{prefix} [{marks} Marks]:</b> {clean_q}", q_box))
+    story.append(Paragraph(f"<b>{prefix} [{marks} Marks]:</b> {safe_pdf_text(question)}", q_box))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cccccc'), spaceBefore=2, spaceAfter=6))
     
     lines = answer_markdown.split("\n")
@@ -118,19 +132,17 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             continue
         elif in_mermaid:
             clean_flow = line.replace("-->", " -> ").replace("[", "").replace("]", "")
-            story.append(Paragraph(f"&bull; {sanitize_for_pdf(clean_flow)}", bullet_style))
+            story.append(Paragraph(f"&bull; {safe_pdf_text(clean_flow)}", bullet_style))
             continue
             
         if line.startswith("#"):
             clean_h = re.sub(r"^#+\s*", "", line)
-            story.append(Paragraph(f"<b>{sanitize_for_pdf(clean_h)}</b>", h1_style))
+            story.append(Paragraph(f"<b>{safe_pdf_text(clean_h)}</b>", h1_style))
         elif line.startswith("-") or line.startswith("*") or (len(line) > 2 and line[0].isdigit() and line[1] in [".", ")"]):
             clean_bullet = re.sub(r"^[-*]\s*", "", line)
-            clean_bullet = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", clean_bullet)
-            story.append(Paragraph(f"&bull; {sanitize_for_pdf(clean_bullet)}", bullet_style))
+            story.append(Paragraph(f"&bull; {safe_pdf_text(clean_bullet)}", bullet_style))
         else:
-            clean_body = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", line)
-            story.append(Paragraph(sanitize_for_pdf(clean_body), body_style))
+            story.append(Paragraph(safe_pdf_text(line), body_style))
             
     return story
 
@@ -182,31 +194,31 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWE
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT (UPDATED WITH 2082/83 ECONOMIC SURVEY)
+# LOK SEWA SYSTEM PROMPT (VERIFIED: AGDP 25.16% & 2081 POLICIES)
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service "
     "(Gazetted Third Class / रा.प. तृतीय श्रेणी - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
     "Your mission is to produce high-scoring, concise, examiner-friendly answers tailored for the 3-hour written exam.\n"
     "Provide FEWER, PUNCHY, HIGH-IMPACT, EASY-TO-REMEMBER points suitable for a 13-14 minute writing window.\n\n"
-    "MANDATORY OFFICIAL 2082/83 STATISTICAL DATA BASELINE:\n"
-    "- Economic Survey 2082/83 (आर्थिक सर्वेक्षण २०८२/८३):\n"
-    "  * Agriculture contribution to GDP: 24.03% (Primary sector contribution: 24.46%)\n"
-    "  * National GDP Growth Rate: 3.85%\n"
-    "  * National GDP Size: NPR 66.09 Kharba (रु. ६६ खर्ब ९ अर्ब)\n"
-    "  * Absolute Poverty Rate: 20.27%\n"
+    "MANDATORY OFFICIAL VERIFIED STATISTICAL BASELINE:\n"
+    "- Economic Survey & National Statistics Office (NSO) Latest Official Data:\n"
+    "  * Agriculture sector contribution to GDP: 25.16% (Industry: 12.83%, Services: 62.01%)\n"
+    "  * National Economic Growth Rate (GDP Growth): 4.61%\n"
+    "  * National GDP Size: NPR 6.107 Trillion (रु. ६१ खर्ब ७ अर्ब)\n"
+    "  * Per Capita GNI: USD 1,517\n"
     "- National Sample Census of Agriculture 2078 (NSO):\n"
     "  * 4.13 million farm holdings (62% of households depend on agriculture)\n"
     "  * Total agricultural land: 2.218 million hectares\n"
     "  * Average holding size: 0.55 ha (heavily fragmented, ~2.8 parcels/holding)\n"
-    "  * 54.5% holdings irrigated, but barely one-third (~33%) have year-round irrigation\n\n"
+    "  * 54.5% holdings irrigated, but only ~33% have year-round irrigation\n\n"
     "MANDATORY LEGISLATIVE & POLICY ANCHORS (2081/2082):\n"
-    "- National Agriculture Policy, 2081 (राष्ट्रिय कृषि नीति, २०८१): Federalized execution, contract farming, climate resilience.\n"
-    "- Agriculture Investment Decade 2081-2091 (कृषिमा लगानी दशक, २०८१-२०९१): Multi-sectoral capital mobilization.\n"
+    "- National Agriculture Policy, 2081 (राष्ट्रिय कृषि नीति, २०८१): Federalized alignment (Schedules 5-9), commercial ecosystem, climate resilience.\n"
+    "- Agriculture Investment Decade 2081-2091 (कृषिमा लगानी दशक, २०८१-२०९१): Public-Private-Cooperative partnership.\n"
     "- Food Hygiene and Quality Act, 2081 (खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१): Farm-to-fork quality, SPS compliance, traceability.\n"
     "- Pesticides Management Act, 2076 & Pesticide Management Regulation, 2081.\n"
     "- Plant Protection Regulation (First Amendment), 2080.\n"
-    "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural transformation.\n"
+    "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural economic transformation.\n"
     "- Constitution of Nepal: Art. 36 (Food Sovereignty), Art. 51(h) (Policies on Agriculture/Land).\n"
     "- ADS (2015-2035) 4 Pillars: Governance, Productivity, Commercialization, Competitiveness.\n\n"
     "MANDATORY GRAPH OR FLOWCHART INSTRUCTION:\n"
@@ -214,7 +226,7 @@ LOKSEWA_SYSTEM_PROMPT = (
     "Depending on the question, provide either a Data Graph (`xychart-beta` / `pie`) or a Process Flowchart (`graph TD`).\n\n"
     "STRICT ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences: concept, scope, importance)\n"
-    "2. Current Scenario & Verified Data Snapshot (cite Economic Survey 2082/83 & Census 2078)\n"
+    "2. Current Scenario & Verified Data Snapshot (cite 25.16% Agri GDP share, 4.61% GDP growth, Census 2078)\n"
     "3. Mandatory Mermaid Diagram / Graph\n"
     "4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
@@ -248,43 +260,42 @@ def render_loksewa_content(content_text: str):
                 st.markdown(part)
 
 # -------------------------------------------------------------
-# DYNAMIC MODEL DISCOVERY (PREVENTS 404/400 ERRORS)
+# SILENT AUTO-DISCOVERY OF MODELS (NO SIDEBAR CLUTTER)
 # -------------------------------------------------------------
 def get_groq_client(api_key: str):
     if not api_key:
         return None
     return Groq(api_key=api_key)
 
-def get_account_active_models(client):
-    """Fetches exact models available to this API key to guarantee no 404 errors."""
+def auto_select_models_silently(client):
+    """Silently determines the best active models without showing any sidebar UI clutter."""
     try:
         models = client.models.list()
         all_ids = [m.id for m in models.data]
         
-        # Filter for text chat models (exclude audio/safety guard)
-        text_models = [m for m in all_ids if "whisper" not in m.lower() and "guard" not in m.lower()]
-        
-        priority_order = [
+        # Priority list for text chat models
+        text_priority = [
+            "llama-3.3-70b-versatile",
             "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
             "llama-3.1-8b-instant"
         ]
-        sorted_text = []
-        for p in priority_order:
-            if p in text_models:
-                sorted_text.append(p)
-        for m in text_models:
-            if m not in sorted_text:
-                sorted_text.append(m)
+        text_model = "llama-3.1-8b-instant"
+        for tp in text_priority:
+            if tp in all_ids:
+                text_model = tp
+                break
                 
-        # Vision models
-        vision_models = [m for m in all_ids if "qwen" in m.lower() or "vision" in m.lower()]
-        if not vision_models:
-            vision_models = ["qwen/qwen3.8-27b"]
-            
-        return vision_models, sorted_text
+        # Vision model
+        vision_model = "qwen/qwen3.8-27b"
+        for m in all_ids:
+            if "qwen" in m.lower() or "vision" in m.lower():
+                vision_model = m
+                break
+                
+        return vision_model, text_model
     except Exception:
-        return ["qwen/qwen3.8-27b"], ["llama-3.1-8b-instant"]
+        return "qwen/qwen3.8-27b", "llama-3.1-8b-instant"
 
 def preprocess_and_encode_image(image: Image.Image) -> str:
     if image.mode in ("RGBA", "P"):
@@ -331,7 +342,7 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     
     Adhere strictly to the required answer format:
     1. Concise Introduction (2-3 sentences)
-    2. Current Scenario & Official Data Snapshot (Use Economic Survey 2082/83: Agri GDP Share 24.03%, GDP Growth 3.85%, and Census 2078)
+    2. Current Scenario & Official Data Snapshot (Use Verified Data: Agriculture GDP share 25.16%, GDP Growth 4.61%, Census 2078)
     3. Mermaid Diagram or Data Graph (Use ```mermaid ... ```)
     4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
@@ -359,62 +370,31 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
             raise e
 
 # -------------------------------------------------------------
-# SIDEBAR
+# CLEAN SIDEBAR (NO MODEL DROPDOWNS OR UNNECESSARY TEXT)
 # -------------------------------------------------------------
-with st.sidebar:
-    st.title("⚙️ Lok Sewa Setup")
-    groq_api_key = st.text_input(
-        "Groq API Key", 
-        type="password", 
-        value=os.getenv("GROQ_API_KEY", ""),
-        help="Free API Key from console.groq.com"
-    )
-    
-    if groq_api_key:
-        client = get_groq_client(groq_api_key)
-        vision_options, text_options = get_account_active_models(client)
-        
-        st.markdown("---")
-        st.markdown("### 🤖 Active Account Models")
-        selected_text_model = st.selectbox(
-            "Writing Model (Active & Validated):",
-            text_options,
-            index=0,
-            help="Live model list from your account to prevent 404/400 errors."
-        )
-        selected_vision_model = vision_options[0]
-    else:
-        selected_text_model = "llama-3.1-8b-instant"
-        selected_vision_model = "qwen/qwen3.8-27b"
+groq_api_key = os.getenv("GROQ_API_KEY", "")
+if not groq_api_key and "GROQ_API_KEY" in st.secrets:
+    groq_api_key = st.secrets["GROQ_API_KEY"]
 
-    st.markdown("---")
-    st.markdown("### 📊 Updated Baseline: 2082/83")
-    st.caption(
-        "• **आर्थिक सर्वेक्षण २०८२/८३:**\n"
-        "  - GDP मा कृषि अंश: **२४.०३ %**\n"
-        "  - प्राथमिक क्षेत्र: **२४.४६ %**\n"
-        "  - आर्थिक वृद्धिदर: **३.८५ %**\n"
-        "  - GDP आकार: **रु. ६६ खर्ब ९ अर्ब**\n"
-        "  - निरपेक्ष गरिबी: **२०.२७ %**\n"
-        "• **नीतिगत ढाँचा:**\n"
-        "  - राष्ट्रिय कृषि नीति, २०८१\n"
-        "  - कृषिमा लगानी दशक (२०८१–२०९१)\n"
-        "  - खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१\n"
-        "  - १६औँ योजना (२०८१/८२–२०८५/८६)"
-    )
-    st.markdown("---")
-    saved_count = len(st.session_state["saved_notes"])
-    st.markdown(f"### 📚 Serial Revision Bank: **{saved_count} Notes**")
+if not groq_api_key:
+    groq_api_key = st.sidebar.text_input("Enter Groq API Key", type="password", help="Get free key from console.groq.com")
+
+saved_count = len(st.session_state["saved_notes"])
+st.sidebar.markdown(f"### 📚 Saved Notes: **{saved_count}**")
 
 # -------------------------------------------------------------
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Updated with Economic Survey 2082/83 & 2081 Policies | Batch & Single PDF Download")
+st.caption("Official Data: 25.16% AGDP Share | 2081 Policies | Crash-Proof PDF Export")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
     st.stop()
+
+# Initialize client and silently detect models
+client = get_groq_client(groq_api_key)
+vision_model, text_model = auto_select_models_silently(client)
 
 tab1, tab2, tab3 = st.tabs([
     "📸 Photo Upload (Up to 12 Questions)", 
@@ -440,7 +420,7 @@ with tab1:
             if st.button("🔍 Extract Questions from Photo", type="primary", use_container_width=True):
                 with st.spinner("Extracting questions cleanly..."):
                     try:
-                        extracted_text = extract_questions_from_image(client, image, selected_vision_model)
+                        extracted_text = extract_questions_from_image(client, image, vision_model)
                         st.session_state["extracted_questions_raw"] = extracted_text
                         lines = [q.strip() for q in extracted_text.split("\n") if q.strip() and (q[0].isdigit() or q.upper().startswith("Q"))]
                         st.session_state["parsed_questions"] = lines if lines else [extracted_text]
@@ -469,9 +449,9 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Preparing answer with 2082/83 data and Mermaid visualization..."):
+                with st.spinner("Preparing answer with verified 25.16% data and Mermaid visualization..."):
                     try:
-                        ans = generate_loksewa_answer(client, selected_q, q_marks, selected_text_model)
+                        ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
                         st.session_state["current_q"] = selected_q
                         st.session_state["current_marks"] = q_marks
@@ -525,7 +505,7 @@ with tab1:
                 for idx, q_text in enumerate(question_list):
                     status_text.write(f"✍️ **Drafting Question {idx+1}/{total_count}:** {q_text}")
                     try:
-                        ans_text = generate_loksewa_answer(client, q_text, bulk_marks, selected_text_model)
+                        ans_text = generate_loksewa_answer(client, q_text, bulk_marks, text_model)
                         all_results.append({
                             "question": q_text,
                             "marks": bulk_marks,
@@ -581,7 +561,7 @@ with tab2:
     st.subheader("Type or Paste Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Analyze the state of agricultural productivity in Nepal in light of Economic Survey 2082/83 and suggest strategic interventions under National Agriculture Policy, 2081. [10 marks]",
+        placeholder="e.g., Explain the significance of the National Agriculture Policy, 2081 and Agriculture Investment Decade (2081-2091) in transforming commercial agriculture in Nepal. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -592,9 +572,9 @@ with tab2:
         if not single_q.strip():
             st.warning("Please type a question.")
         else:
-            with st.spinner("Preparing answer with Economic Survey 2082/83 data..."):
+            with st.spinner("Preparing answer with verified 25.16% data..."):
                 try:
-                    ans = generate_loksewa_answer(client, single_q, s_marks, selected_text_model)
+                    ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
                     st.session_state["single_q"] = single_q
                     st.session_state["single_marks"] = s_marks
