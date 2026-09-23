@@ -153,65 +153,52 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWE
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT (COMPACT AT-A-GLANCE DIAGRAMS)
+# LOK SEWA SYSTEM PROMPT (NARC, DoA, PQPMC, SQCC, PMAMP ANCHORS)
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service "
     "(Gazetted Third Class / रा.प. तृतीय श्रेणी - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
     "Your mission is to produce high-scoring, concise, examiner-friendly answers tailored for the 3-hour written exam.\n"
     "Provide FEWER, PUNCHY, HIGH-IMPACT, EASY-TO-REMEMBER points suitable for a 13-14 minute writing window.\n\n"
-    "MANDATORY OFFICIAL VERIFIED STATISTICAL BASELINE:\n"
-    "- Economic Survey & National Statistics Office (NSO) Latest Official Data:\n"
-    "  * Agriculture sector contribution to GDP: 25.16% (Industry: 12.83%, Services: 62.01%)\n"
-    "  * National Economic Growth Rate (GDP Growth): 4.61%\n"
-    "  * National GDP Size: NPR 6.107 Trillion (रु. ६१ खर्ब ७ अर्ब)\n"
-    "  * Per Capita GNI: USD 1,517\n"
-    "- National Sample Census of Agriculture 2078 (NSO):\n"
-    "  * 4.13 million farm holdings (62% of households depend on agriculture)\n"
-    "  * Total agricultural land: 2.218 million hectares\n"
-    "  * Average holding size: 0.55 ha (heavily fragmented, ~2.8 parcels/holding)\n"
-    "  * 54.5% holdings irrigated, but only ~33% have year-round irrigation\n\n"
-    "MANDATORY LEGISLATIVE & POLICY ANCHORS (2081/2082):\n"
-    "- National Agriculture Policy, 2081 (राष्ट्रिय कृषि नीति, २०८१): Federalized alignment (Schedules 5-9), commercial ecosystem, climate resilience.\n"
-    "- Agriculture Investment Decade 2081-2091 (कृषिमा लगानी दशक, २०८१-२०९१): Public-Private-Cooperative partnership.\n"
-    "- Food Hygiene and Quality Act, 2081 (खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१): Farm-to-fork quality, SPS compliance, traceability.\n"
-    "- Pesticides Management Act, 2076 & Pesticide Management Regulation, 2081.\n"
-    "- Plant Protection Regulation (First Amendment), 2080.\n"
-    "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural economic transformation.\n"
-    "- Constitution of Nepal: Art. 36 (Food Sovereignty), Art. 51(h) (Policies on Agriculture/Land).\n"
-    "- ADS (2015-2035) 4 Pillars: Governance, Productivity, Commercialization, Competitiveness.\n\n"
-    "CRITICAL MERMAID INSTRUCTIONS (MUST BE VISIBLE AT A GLANCE - NO SCROLLING):\n"
-    "1. Keep flowcharts COMPACT (maximum 3 to 4 sequential steps).\n"
-    "2. Use `graph TD` (Top-Down) orientation.\n"
-    "3. Keep text inside boxes concise (3-4 words). Use `<br/>` for line breaks:\n"
-    "   Example:\n"
-    "   graph TD\n"
-    "   A[\"Variable Input &uarr;<br/>(e.g., Fertilizer)\"] --> B[\"Stage 1: Increasing Returns<br/>(High MP & TP)\"]\n"
-    "   B --> C[\"Stage 2: Diminishing Returns<br/>(Rational Zone: MP falls)\"]\n"
-    "   C --> D[\"Stage 3: Negative Returns<br/>(MP < 0: Over-dosage)\"]\n"
-    "4. Always wrap node labels in double quotes.\n\n"
-    "STORY-BASED MNEMONIC REQUIREMENT (कथा स्मरण सूत्र):\n"
-    "- DO NOT generate dry acronyms.\n"
-    "- Create a vivid, memorable 1-2 sentence micro-story (in Nepali or English) connecting all the core analytical points in chronological order.\n"
-    "- Example format:\n"
-    "  * 📖 **कथा स्मरण सूत्र (Memory Story):** 'किसान **राम**ले स्वस्थ **माटो र बीउ** (Inputs) छानी, **AKC को प्राविधिक सल्लाह** (Extension) लिएर **शीतभण्डार** (Storage) पुर्याई **बजार मूल्य शृङ्खला** (Value Chain) जोडेपछि **आम्दानी दोब्बर** (Outcome) बनाए।'\n\n"
+    "MANDATORY CITATION OF OFFICIAL PUBLICATIONS & INSTITUTIONAL SOURCES:\n"
+    "Whenever discussing technical practices, standards, data, or policies, explicitly cite the relevant authoritative bodies:\n"
+    "1. NARC (Nepal Agricultural Research Council): Variety release bulletins, Package of Practices (PoP), commodity research reports (NMRP, NRRP, NWRP, NHRD), National Genebank publications.\n"
+    "2. DoA (Department of Agriculture): Official Krishi Diary (कृषि डायरी), crop calendars, IPM training modules, and technical pocket manuals.\n"
+    "3. PQPMC (Plant Quarantine & Pesticide Management Centre): Banned pesticide register (24 active ingredients), Rapid Bioassay for Pesticide Residue (RBPR) reports, Pest Risk Analysis (PRA) protocols, e-Phyto quarantine directives.\n"
+    "4. SQCC (Seed Quality Control Centre): Seed certification standards (germination %, purity %, moisture limits, isolation distance in meters), notified varieties catalogue, National Seed Balance Sheet.\n"
+    "5. PMAMP (Prime Minister Agriculture Modernization Project): 4-tier model (Pocket, Block, Zone, Superzone), Custom Hiring Centre (CHC) norms, post-harvest and commercial corridor processing hubs.\n"
+    "6. Projects (Federal & Provincial): REED (Rural Enterprise & Economic Development), FANSEP, Smart Agriculture Village Program (स्मार्ट कृषि गाउँ - provincial MoLMAC), and AKC frontline technical delivery.\n\n"
+    "DYNAMIC TECHNICAL DATA MANDATE:\n"
+    "- Never dump the same generic macro-GDP data on every question.\n"
+    "- Generate topic-specific agronomic and technical metrics directly tied to the question (e.g., Economic Threshold Levels, spore germination temperatures, seed standards, soil pH ranges, benefit-cost ratios, chilling hours).\n\n"
+    "CRITICAL MERMAID INSTRUCTIONS (DETAILED, COMPLETE & BEAUTIFULLY STRUCTURED):\n"
+    "1. Do NOT limit flowcharts to 4 simple steps. Build a detailed, comprehensive, multi-stage model (5 to 8+ interconnected steps, branches, or feedback loops) that truly explains the technical mechanism.\n"
+    "2. ALWAYS use Top-Down orientation: `graph TD`.\n"
+    "3. Keep text inside boxes concise (3-5 words) using `<br/>` for line breaks.\n"
+    "4. Always wrap node labels in double quotes, e.g., A[\"Stage 1: Awareness<br/>(Mass Media Reach)\"] --> B[\"Stage 2: Interest<br/>(Demonstration Visits)\"].\n"
+    "5. NEVER print meta-text comments like '(Only 4 steps)'.\n\n"
+    "STORY-BASED MNEMONIC REQUIREMENT (ENGLISH STORY ONLY):\n"
+    "- DO NOT generate dry letter acronyms.\n"
+    "- Provide a memorable 1-2 sentence narrative micro-story strictly in ENGLISH connecting all core analytical points in chronological order.\n"
+    "- Format Example:\n"
+    "  * 📖 **Memory Story (Rapid Recall Narrative):** 'Farmer **Hari** first tested his **Soil & Certified Seed** (Inputs), adopted **AKC Extension Advice** (Technical Knowledge), stored his harvest in a **Cold Chain Hub** (Post-Harvest Infrastructure), and secured a direct contract via the **Cooperatives Value Chain** (Market Linkage) to achieve **Double Net Profit** (Economic Outcome).'\n\n"
     "STRICT ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences: concept, scope, importance)\n"
-    "2. Current Scenario & Verified Data Snapshot (cite 25.16% Agri GDP share, 4.61% GDP growth, Census 2078)\n"
-    "3. Mandatory Mermaid Diagram / Graph (COMPACT, AT A GLANCE)\n"
-    "4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)\n"
+    "2. Current Scenario & Topic-Specific Data Snapshot (Cite NARC/DoA/PQPMC/SQCC/PMAMP publications/data)\n"
+    "3. Mandatory Mermaid Diagram / Process Model (Detailed Top-Down `graph TD` showing the full mechanism)\n"
+    "4. Policy, Legal & Institutional Linkage (National Agri Policy 2081, 16th Plan, Food Hygiene Act 2081, PMAMP, SQCC/PQPMC Acts)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
     "6. Key Operational Challenges (4-5 points)\n"
-    "7. Actionable Way Forward (Federal, Provincial, Local roles)\n"
-    "8. Story-Based Mnemonic for Rapid Recall (कथा स्मरण सूत्र - vivid 1-2 sentence real-world story)\n"
+    "7. Actionable Way Forward (Federal, Provincial, Local roles & Project Linkages)\n"
+    "8. Story-Based Mnemonic for Rapid Recall (English narrative micro-story)\n"
     "9. Strategic Conclusion"
 )
 
 # -------------------------------------------------------------
-# COMPACT "AT-A-GLANCE" MERMAID RENDERING ENGINE
+# RESPONSIVE TOP-DOWN MERMAID RENDERING ENGINE
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
-    """Renders markdown text with an auto-fit, zero-scroll Mermaid diagram."""
+    """Renders markdown text with an auto-fitting, responsive vertical Mermaid diagram without arbitrary height caps."""
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
     parts = re.split(mermaid_pattern, content_text)
     
@@ -222,6 +209,10 @@ def render_loksewa_content(content_text: str):
             # Ensure Top-Down orientation
             mermaid_code = re.sub(r'\b(graph|flowchart)\s+LR\b', r'\1 TD', mermaid_code, flags=re.IGNORECASE)
             
+            # Dynamic height calculation that gracefully expands for detailed diagrams
+            line_count = len(mermaid_code.strip().split('\n'))
+            dyn_height = min(950, max(320, line_count * 45 + 100))
+            
             html_code = f"""
             <!DOCTYPE html>
             <html>
@@ -229,7 +220,7 @@ def render_loksewa_content(content_text: str):
                 <style>
                     body {{
                         margin: 0;
-                        padding: 4px;
+                        padding: 8px;
                         background: transparent;
                         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                         display: flex;
@@ -242,23 +233,19 @@ def render_loksewa_content(content_text: str):
                         background-color: #f8fafc;
                         border: 1px solid #cbd5e1;
                         border-radius: 8px;
-                        padding: 8px 16px;
+                        padding: 16px;
                         box-sizing: border-box;
                         width: 100%;
-                        max-width: 620px;
-                        min-height: 200px;
+                        max-width: 680px;
                     }}
                     .mermaid {{
                         width: 100%;
                         display: flex;
                         justify-content: center;
                     }}
-                    /* Keeps the diagram compact and fully visible at a glance */
                     .mermaid svg {{
-                        max-height: 220px !important;
                         max-width: 100% !important;
                         height: auto !important;
-                        width: auto !important;
                     }}
                 </style>
             </head>
@@ -279,7 +266,7 @@ def render_loksewa_content(content_text: str):
                             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
                         }},
                         flowchart: {{
-                            useMaxWidth: false,  /* Prevents giant full-screen blowout */
+                            useMaxWidth: false,
                             htmlLabels: true,
                             curve: 'basis'
                         }}
@@ -288,8 +275,7 @@ def render_loksewa_content(content_text: str):
             </body>
             </html>
             """
-            # Fixed 260px container fits the entire diagram at a single glance
-            components.html(html_code, height=260, scrolling=False)
+            components.html(html_code, height=dyn_height, scrolling=True)
         else:
             if part.strip():
                 st.markdown(part)
@@ -373,14 +359,16 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     MARKS ALLOTTED: {marks} Marks
     
     Adhere strictly to the required answer format:
-    1. Concise Introduction (2-3 sentences)
-    2. Current Scenario & Official Data Snapshot (Use Verified Data: Agriculture GDP share 25.16%, GDP Growth 4.61%, Census 2078)
-    3. Mermaid Diagram: MANDATORY Top-Down `graph TD` ONLY! Keep it compact (3-4 steps max) with `<br/>` line breaks so the whole diagram is seen at a glance without scrolling.
-    4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)
+    1. Concise Introduction (2-3 sentences: concept, scope, importance)
+    2. Current Scenario & Topic-Specific Data Snapshot:
+       - Cite verified publications/data from NARC, DoA (Krishi Diary), PQPMC, SQCC, PMAMP, or relevant federal/provincial projects.
+       - Provide technical thresholds, ratios, standards, and metrics specific to this question's domain.
+    3. Mermaid Diagram: MANDATORY Top-Down `graph TD`. Make it a detailed, comprehensive, multi-stage model (5 to 8+ steps) that fully captures the technical mechanism. Wrap all node labels in double quotes. Do NOT add meta comments like '(only 4 steps)'.
+    4. Policy, Legal & Institutional Linkage (Explicitly link to relevant Acts, NARC/DoA directives, PMAMP guidelines, SQCC seed standards, PQPMC quarantine/pesticide rules, or 16th Plan/National Agriculture Policy 2081)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
-    6. Key Challenges (4-5 points)
-    7. Way Forward (Federal, Provincial, Local roles)
-    8. Story-Based Mnemonic for Rapid Recall (कथा स्मरण सूत्र - vivid 1-2 sentence real-world story connecting core points)
+    6. Key Operational Challenges (4-5 points)
+    7. Actionable Way Forward (Federal, Provincial, Local roles & Project linkages)
+    8. Story-Based Mnemonic for Rapid Recall (MANDATORY in English: 1-2 sentence real-world narrative micro-story connecting all core analytical points)
     9. Strategic Conclusion
     """
     for attempt in range(retries + 1):
@@ -418,7 +406,7 @@ st.sidebar.markdown(f"### 📚 Saved Notes: **{saved_count}**")
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Official Data: 25.16% AGDP Share | Story Mnemonics | Compact At-A-Glance Diagrams")
+st.caption("Anchored to NARC, DoA, PQPMC, SQCC & PMAMP Publications | English Story Mnemonics | Deep Flowcharts")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -477,7 +465,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Preparing answer with compact diagram and story mnemonic..."):
+                with st.spinner("Preparing answer with institutional citations, detailed diagram, and story mnemonic..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -586,7 +574,7 @@ with tab2:
     st.subheader("Type or Paste Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Explain the Law of Diminishing Marginal Returns (DMRR) with respect to fertilizer application in crop production. [10 marks]",
+        placeholder="e.g., Explain the seed certification standards and field inspection procedures for hybrid maize production in Nepal citing SQCC and NARC guidelines. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -597,7 +585,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please type a question.")
         else:
-            with st.spinner("Preparing answer with compact at-a-glance diagram..."):
+            with st.spinner("Preparing answer with institutional citations, detailed diagram, and story mnemonic..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
