@@ -48,66 +48,32 @@ if "saved_notes" not in st.session_state:
     st.session_state["saved_notes"] = load_saved_notes()
 
 # -------------------------------------------------------------
-# CRASH-PROOF PDF TEXT SANITIZER (FIXES PARAPARSER SYNTAX ERROR)
+# CRASH-PROOF PDF TEXT SANITIZER
 # -------------------------------------------------------------
 def safe_pdf_text(raw_text: str) -> str:
-    """
-    Escapes raw XML/HTML characters (<, >, &) first, then converts
-    markdown bold/italic to valid tags, preventing reportlab paraparser crashes.
-    """
+    """Escapes raw XML/HTML characters (<, >, &) to prevent paraparser crashes."""
     if not raw_text:
         return ""
-    # 1. Escape HTML special characters
     escaped = html.escape(raw_text)
-    # 2. Convert markdown bold **text** to <b>text</b>
     escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
-    # 3. Convert markdown italic *text* to <i>text</i>
     escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
-    # 4. Convert arrow notations cleanly
     escaped = escaped.replace("-&gt;", " &rarr; ")
-    # 5. Latin-1 safe encode
     return escaped.encode("latin-1", "replace").decode("latin-1")
 
 def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
     styles = getSampleStyleSheet()
     
     q_box = ParagraphStyle(
-        f'QBox_{q_num}',
-        parent=styles['Normal'],
-        fontName='Helvetica-Bold',
-        fontSize=10,
-        leading=14,
-        textColor=colors.HexColor('#0d47a1'),
-        spaceBefore=6,
-        spaceAfter=6
+        f'QBox_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=14, textColor=colors.HexColor('#0d47a1'), spaceBefore=6, spaceAfter=6
     )
     h1_style = ParagraphStyle(
-        f'H1_{q_num}',
-        parent=styles['Normal'],
-        fontName='Helvetica-Bold',
-        fontSize=9.5,
-        leading=13,
-        textColor=colors.HexColor('#1b5e20'),
-        spaceBefore=7,
-        spaceAfter=3
+        f'H1_{q_num}', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#1b5e20'), spaceBefore=7, spaceAfter=3
     )
     body_style = ParagraphStyle(
-        f'Body_{q_num}',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=8.5,
-        leading=12,
-        textColor=colors.HexColor('#212121'),
-        spaceAfter=3
+        f'Body_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, textColor=colors.HexColor('#212121'), spaceAfter=3
     )
     bullet_style = ParagraphStyle(
-        f'Bullet_{q_num}',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=8.5,
-        leading=12,
-        leftIndent=12,
-        spaceAfter=2
+        f'Bullet_{q_num}', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, leftIndent=12, spaceAfter=2
     )
 
     story = []
@@ -131,7 +97,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             in_mermaid = False
             continue
         elif in_mermaid:
-            clean_flow = line.replace("-->", " -> ").replace("[", "").replace("]", "")
+            clean_flow = line.replace("-->", " -> ").replace("[", "").replace("]", "").replace('"', '')
             story.append(Paragraph(f"&bull; {safe_pdf_text(clean_flow)}", bullet_style))
             continue
             
@@ -150,7 +116,6 @@ def generate_single_pdf_bytes(question: str, marks: int, answer_markdown: str) -
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
-    
     header_style = ParagraphStyle('Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, leading=15, textColor=colors.HexColor('#1b5e20'), alignment=1)
     sub_header = ParagraphStyle('SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11, textColor=colors.HexColor('#555555'), alignment=1)
 
@@ -167,7 +132,6 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWE
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
-    
     header_style = ParagraphStyle('HeaderBulk', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=colors.HexColor('#1b5e20'), alignment=1)
     sub_header = ParagraphStyle('SubHeaderBulk', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#555555'), alignment=1)
 
@@ -178,12 +142,7 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWE
     ]
     
     for idx, item in enumerate(qa_list):
-        q_story = build_pdf_story_for_qa(
-            item["question"],
-            item.get("marks", 10),
-            item["answer"],
-            q_num=idx + 1
-        )
+        q_story = build_pdf_story_for_qa(item["question"], item.get("marks", 10), item["answer"], q_num=idx + 1)
         story.extend(q_story)
         if idx < len(qa_list) - 1:
             story.append(Spacer(1, 15))
@@ -194,7 +153,7 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWE
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT (VERIFIED: AGDP 25.16% & 2081 POLICIES)
+# LOK SEWA SYSTEM PROMPT (STORY-BASED MNEMONIC + STRICT MERMAID)
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service "
@@ -221,40 +180,93 @@ LOKSEWA_SYSTEM_PROMPT = (
     "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural economic transformation.\n"
     "- Constitution of Nepal: Art. 36 (Food Sovereignty), Art. 51(h) (Policies on Agriculture/Land).\n"
     "- ADS (2015-2035) 4 Pillars: Governance, Productivity, Commercialization, Competitiveness.\n\n"
-    "MANDATORY GRAPH OR FLOWCHART INSTRUCTION:\n"
-    "In every answer, include AT LEAST ONE graphical visualization using valid Mermaid syntax enclosed in " + TRIPLE_BACKTICKS + "mermaid ... " + TRIPLE_BACKTICKS + ".\n"
-    "Depending on the question, provide either a Data Graph (`xychart-beta` / `pie`) or a Process Flowchart (`graph TD`).\n\n"
+    "CRITICAL MERMAID SYNTAX RULES:\n"
+    "1. Always wrap node text in double quotes to prevent syntax crashes: e.g., A[\"Farmer (Small)\"] --> B[\"Storage / Processing\"].\n"
+    "2. Never use unquoted parentheses `()`, slashes `/`, or ampersands `&` inside `[...]`.\n"
+    "3. Keep flowcharts clean, logical, and compact.\n\n"
+    "STORY-BASED MNEMONIC REQUIREMENT (कथा स्मरण सूत्र):\n"
+    "- DO NOT generate dry acronyms.\n"
+    "- Create a vivid, memorable 1-2 sentence micro-story (in Nepali or English) connecting all the core analytical points in chronological order.\n"
+    "- Example format:\n"
+    "  * 📖 **कथा स्मरण सूत्र (Memory Story):** 'किसान **राम**ले स्वस्थ **माटो र बीउ** (Inputs) छानी, **AKC को प्राविधिक सल्लाह** (Extension) लिएर **शीतभण्डार** (Storage) पुर्याई **बजार मूल्य शृङ्खला** (Value Chain) जोडेपछि **आम्दानी दोब्बर** (Outcome) बनाए।'\n\n"
     "STRICT ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences: concept, scope, importance)\n"
     "2. Current Scenario & Verified Data Snapshot (cite 25.16% Agri GDP share, 4.61% GDP growth, Census 2078)\n"
-    "3. Mandatory Mermaid Diagram / Graph\n"
+    "3. Mandatory Mermaid Diagram / Graph (wrapped cleanly with quoted node names)\n"
     "4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
     "6. Key Operational Challenges (4-5 points)\n"
     "7. Actionable Way Forward (Federal, Provincial, Local roles)\n"
-    "8. Mnemonic for Quick Recall (English or Nepali acronym)\n"
+    "8. Story-Based Mnemonic for Rapid Recall (कथा स्मरण सूत्र - vivid 1-2 sentence real-world story)\n"
     "9. Strategic Conclusion"
 )
 
 # -------------------------------------------------------------
-# MERMAID RENDERING HELPER
+# ENHANCED RESPONSIVE MERMAID RENDERING HELPER
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
+    """Renders markdown text with an auto-scaling Mermaid SVG container."""
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
     parts = re.split(mermaid_pattern, content_text)
+    
     for part in parts:
         if part.startswith(f"{TRIPLE_BACKTICKS}mermaid"):
             mermaid_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
+            
+            # Auto-calculate height based on diagram lines
+            line_count = len(mermaid_code.strip().split('\n'))
+            dyn_height = min(650, max(280, line_count * 45 + 90))
+            
             html_code = f"""
-            <div class="mermaid" style="display: flex; justify-content: center; background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
-                {mermaid_code}
-            </div>
-            <script type="module">
-                import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-                mermaid.initialize({{ startOnLoad: true, theme: 'default', securityLevel: 'loose' }});
-            </script>
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        margin: 0;
+                        padding: 10px;
+                        background: transparent;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    }}
+                    .mermaid-wrapper {{
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        background-color: #f8fafc;
+                        border: 1px solid #e2e8f0;
+                        border-radius: 8px;
+                        padding: 16px;
+                        overflow-x: auto;
+                    }}
+                    .mermaid {{
+                        margin: 0;
+                        background: transparent;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="mermaid-wrapper">
+                    <pre class="mermaid">
+{mermaid_code}
+                    </pre>
+                </div>
+                <script type="module">
+                    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+                    mermaid.initialize({{
+                        startOnLoad: true,
+                        theme: 'neutral',
+                        securityLevel: 'loose',
+                        flowchart: {{
+                            useMaxWidth: false,
+                            htmlLabels: true,
+                            curve: 'basis'
+                        }}
+                    }});
+                </script>
+            </body>
+            </html>
             """
-            components.html(html_code, height=300, scrolling=True)
+            components.html(html_code, height=dyn_height, scrolling=True)
         else:
             if part.strip():
                 st.markdown(part)
@@ -273,7 +285,6 @@ def auto_select_models_silently(client):
         models = client.models.list()
         all_ids = [m.id for m in models.data]
         
-        # Priority list for text chat models
         text_priority = [
             "llama-3.3-70b-versatile",
             "openai/gpt-oss-120b",
@@ -286,7 +297,6 @@ def auto_select_models_silently(client):
                 text_model = tp
                 break
                 
-        # Vision model
         vision_model = "qwen/qwen3.8-27b"
         for m in all_ids:
             if "qwen" in m.lower() or "vision" in m.lower():
@@ -343,12 +353,12 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     Adhere strictly to the required answer format:
     1. Concise Introduction (2-3 sentences)
     2. Current Scenario & Official Data Snapshot (Use Verified Data: Agriculture GDP share 25.16%, GDP Growth 4.61%, Census 2078)
-    3. Mermaid Diagram or Data Graph (Use ```mermaid ... ```)
+    3. Mermaid Diagram or Data Graph (Use ```mermaid ... ``` - ensure node labels are double-quoted)
     4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
     6. Key Challenges (4-5 points)
     7. Way Forward (Federal, Provincial, Local roles)
-    8. Mnemonic for Quick Recall
+    8. Story-Based Mnemonic for Rapid Recall (कथा स्मरण सूत्र - vivid 1-2 sentence real-world story connecting core points)
     9. Strategic Conclusion
     """
     for attempt in range(retries + 1):
@@ -370,7 +380,7 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
             raise e
 
 # -------------------------------------------------------------
-# CLEAN SIDEBAR (NO MODEL DROPDOWNS OR UNNECESSARY TEXT)
+# CLEAN SIDEBAR
 # -------------------------------------------------------------
 groq_api_key = os.getenv("GROQ_API_KEY", "")
 if not groq_api_key and "GROQ_API_KEY" in st.secrets:
@@ -386,7 +396,7 @@ st.sidebar.markdown(f"### 📚 Saved Notes: **{saved_count}**")
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Official Data: 25.16% AGDP Share | 2081 Policies | Crash-Proof PDF Export")
+st.caption("Official Data: 25.16% AGDP Share | Story Mnemonics | Responsive Mermaid Flowcharts")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -438,9 +448,7 @@ with tab1:
             horizontal=True
         )
         
-        # -------------------------------------------------------------
-        # OPTION A: INDIVIDUAL WATCH & SAVE
-        # -------------------------------------------------------------
+        # Option A: Single Watch & Save
         if mode == "Option A: Watch & Answer Single Question":
             col_q, col_m = st.columns([3, 1])
             with col_q:
@@ -449,7 +457,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Preparing answer with verified 25.16% data and Mermaid visualization..."):
+                with st.spinner("Preparing answer with story mnemonic and responsive Mermaid diagram..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -490,9 +498,7 @@ with tab1:
                 
                 render_loksewa_content(st.session_state["current_ans"])
 
-        # -------------------------------------------------------------
-        # OPTION B: BULK ANSWER & DOWNLOAD ALL AT ONCE
-        # -------------------------------------------------------------
+        # Option B: Bulk Process
         else:
             bulk_marks = st.selectbox("Assign Default Marks per Question:", [5, 10, 15], index=1, key="tab1_bulk_marks")
             
@@ -561,7 +567,7 @@ with tab2:
     st.subheader("Type or Paste Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Explain the significance of the National Agriculture Policy, 2081 and Agriculture Investment Decade (2081-2091) in transforming commercial agriculture in Nepal. [10 marks]",
+        placeholder="e.g., Explain the role of the Agriculture Investment Decade (2081-2091) and National Agriculture Policy, 2081 in enhancing commercial agriculture in Nepal. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -572,7 +578,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please type a question.")
         else:
-            with st.spinner("Preparing answer with verified 25.16% data..."):
+            with st.spinner("Preparing answer with story mnemonic and diagrams..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
