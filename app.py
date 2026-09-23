@@ -97,7 +97,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             in_mermaid = False
             continue
         elif in_mermaid:
-            clean_flow = line.replace("-->", " -> ").replace("[", "").replace("]", "").replace('"', '')
+            clean_flow = line.replace("-->", " &darr; ").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' ')
             story.append(Paragraph(f"&bull; {safe_pdf_text(clean_flow)}", bullet_style))
             continue
             
@@ -153,7 +153,7 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWE
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT (STORY-BASED MNEMONIC + STRICT MERMAID)
+# LOK SEWA SYSTEM PROMPT (TOP-DOWN MERMAID ONLY)
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service "
@@ -180,10 +180,15 @@ LOKSEWA_SYSTEM_PROMPT = (
     "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural economic transformation.\n"
     "- Constitution of Nepal: Art. 36 (Food Sovereignty), Art. 51(h) (Policies on Agriculture/Land).\n"
     "- ADS (2015-2035) 4 Pillars: Governance, Productivity, Commercialization, Competitiveness.\n\n"
-    "CRITICAL MERMAID SYNTAX RULES:\n"
-    "1. Always wrap node text in double quotes to prevent syntax crashes: e.g., A[\"Farmer (Small)\"] --> B[\"Storage / Processing\"].\n"
-    "2. Never use unquoted parentheses `()`, slashes `/`, or ampersands `&` inside `[...]`.\n"
-    "3. Keep flowcharts clean, logical, and compact.\n\n"
+    "CRITICAL MERMAID RULES (HIGH READABILITY - VERTICAL ONLY):\n"
+    "1. ALWAYS use Top-Down orientation: `graph TD` (NEVER use `graph LR` or `flowchart LR` because horizontal diagrams overflow the screen).\n"
+    "2. Stack nodes vertically: A --> B --> C --> D. Maximum 4-5 sequential boxes.\n"
+    "3. Keep node labels short (under 5 words). Use `<br/>` for line breaks inside labels:\n"
+    "   e.g.:\n"
+    "   graph TD\n"
+    "   A[\"Stage 1: Increasing Returns<br/>(High MP & TP)\"] --> B[\"Stage 2: Diminishing Returns<br/>(Rational Production Zone)\"]\n"
+    "   B --> C[\"Stage 3: Negative Returns<br/>(Over-application / Loss)\"]\n"
+    "4. Always wrap node text in double quotes to prevent syntax crashes.\n\n"
     "STORY-BASED MNEMONIC REQUIREMENT (कथा स्मरण सूत्र):\n"
     "- DO NOT generate dry acronyms.\n"
     "- Create a vivid, memorable 1-2 sentence micro-story (in Nepali or English) connecting all the core analytical points in chronological order.\n"
@@ -192,7 +197,7 @@ LOKSEWA_SYSTEM_PROMPT = (
     "STRICT ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences: concept, scope, importance)\n"
     "2. Current Scenario & Verified Data Snapshot (cite 25.16% Agri GDP share, 4.61% GDP growth, Census 2078)\n"
-    "3. Mandatory Mermaid Diagram / Graph (wrapped cleanly with quoted node names)\n"
+    "3. Mandatory Mermaid Diagram / Graph (TOP-DOWN `graph TD` ONLY)\n"
     "4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
     "6. Key Operational Challenges (4-5 points)\n"
@@ -202,10 +207,10 @@ LOKSEWA_SYSTEM_PROMPT = (
 )
 
 # -------------------------------------------------------------
-# ENHANCED RESPONSIVE MERMAID RENDERING HELPER
+# RESPONSIVE TOP-DOWN MERMAID RENDERING ENGINE
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
-    """Renders markdown text with an auto-scaling Mermaid SVG container."""
+    """Renders markdown text with auto-fitting, responsive vertical Mermaid diagrams."""
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
     parts = re.split(mermaid_pattern, content_text)
     
@@ -213,9 +218,12 @@ def render_loksewa_content(content_text: str):
         if part.startswith(f"{TRIPLE_BACKTICKS}mermaid"):
             mermaid_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
             
-            # Auto-calculate height based on diagram lines
+            # Auto-convert horizontal (LR) to top-down (TD) so it never overflows horizontally
+            mermaid_code = re.sub(r'\b(graph|flowchart)\s+LR\b', r'\1 TD', mermaid_code, flags=re.IGNORECASE)
+            
+            # Dynamic height calculation based on lines of code
             line_count = len(mermaid_code.strip().split('\n'))
-            dyn_height = min(650, max(280, line_count * 45 + 90))
+            dyn_height = min(750, max(260, line_count * 48 + 80))
             
             html_code = f"""
             <!DOCTYPE html>
@@ -233,14 +241,19 @@ def render_loksewa_content(content_text: str):
                         justify-content: center;
                         align-items: center;
                         background-color: #f8fafc;
-                        border: 1px solid #e2e8f0;
+                        border: 1px solid #cbd5e1;
                         border-radius: 8px;
                         padding: 16px;
-                        overflow-x: auto;
+                        box-sizing: border-box;
                     }}
                     .mermaid {{
-                        margin: 0;
-                        background: transparent;
+                        width: 100%;
+                        display: flex;
+                        justify-content: center;
+                    }}
+                    .mermaid svg {{
+                        max-width: 100% !important;
+                        height: auto !important;
                     }}
                 </style>
             </head>
@@ -257,7 +270,7 @@ def render_loksewa_content(content_text: str):
                         theme: 'neutral',
                         securityLevel: 'loose',
                         flowchart: {{
-                            useMaxWidth: false,
+                            useMaxWidth: true,
                             htmlLabels: true,
                             curve: 'basis'
                         }}
@@ -266,7 +279,7 @@ def render_loksewa_content(content_text: str):
             </body>
             </html>
             """
-            components.html(html_code, height=dyn_height, scrolling=True)
+            components.html(html_code, height=dyn_height, scrolling=False)
         else:
             if part.strip():
                 st.markdown(part)
@@ -353,7 +366,7 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     Adhere strictly to the required answer format:
     1. Concise Introduction (2-3 sentences)
     2. Current Scenario & Official Data Snapshot (Use Verified Data: Agriculture GDP share 25.16%, GDP Growth 4.61%, Census 2078)
-    3. Mermaid Diagram or Data Graph (Use ```mermaid ... ``` - ensure node labels are double-quoted)
+    3. Mermaid Diagram: MANDATORY Top-Down `graph TD` ONLY! Keep labels concise with `<br/>` line breaks so it fits on screen.
     4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
     6. Key Challenges (4-5 points)
@@ -396,13 +409,12 @@ st.sidebar.markdown(f"### 📚 Saved Notes: **{saved_count}**")
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Official Data: 25.16% AGDP Share | Story Mnemonics | Responsive Mermaid Flowcharts")
+st.caption("Official Data: 25.16% AGDP Share | Story Mnemonics | Responsive Top-Down Flowcharts")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
     st.stop()
 
-# Initialize client and silently detect models
 client = get_groq_client(groq_api_key)
 vision_model, text_model = auto_select_models_silently(client)
 
@@ -457,7 +469,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Preparing answer with story mnemonic and responsive Mermaid diagram..."):
+                with st.spinner("Preparing answer with story mnemonic and top-down diagram..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -567,7 +579,7 @@ with tab2:
     st.subheader("Type or Paste Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Explain the role of the Agriculture Investment Decade (2081-2091) and National Agriculture Policy, 2081 in enhancing commercial agriculture in Nepal. [10 marks]",
+        placeholder="e.g., Explain the Law of Diminishing Marginal Returns (DMRR) with respect to fertilizer application in crop production and its significance in farm management decisions. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -578,7 +590,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please type a question.")
         else:
-            with st.spinner("Preparing answer with story mnemonic and diagrams..."):
+            with st.spinner("Preparing answer with story mnemonic and top-down diagram..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
