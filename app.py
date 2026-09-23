@@ -23,7 +23,7 @@ TRIPLE_BACKTICKS = chr(96) * 3
 # PAGE CONFIGURATION
 # -------------------------------------------------------------
 st.set_page_config(
-    page_title="Lok Sewa Agri Officer Coach",
+    page_title="Lok Sewa Agri Officer Coach (2082/83 Updated)",
     page_icon="🌾",
     layout="wide"
 )
@@ -182,37 +182,45 @@ def generate_bulk_pdf_bytes(qa_list: list, title: str = "EXAMINATION MODEL ANSWE
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT
+# LOK SEWA SYSTEM PROMPT (UPDATED WITH 2082/83 ECONOMIC SURVEY)
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite Nepal Lok Sewa Aayog evaluator and answer-writing mentor for the Nepal Agricultural Service "
     "(Gazetted Third Class / रा.प. तृतीय श्रेणी - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
     "Your mission is to produce high-scoring, concise, examiner-friendly answers tailored for the 3-hour written exam.\n"
     "Provide FEWER, PUNCHY, HIGH-IMPACT, EASY-TO-REMEMBER points suitable for a 13-14 minute writing window.\n\n"
-    "MANDATORY UPDATED LEGISLATION & POLICY BASELINE (2080/2081):\n"
-    "- National Agriculture Policy, 2081 (राष्ट्रिय कृषि नीति, २०८१): Federalized alignment (Schedules 5-9), commercial ecosystem, climate resilience.\n"
-    "- Agriculture Investment Decade 2081-2091 (कृषिमा लगानी दशक, २०८१-२०९१): Public-Private-Cooperative partnership.\n"
+    "MANDATORY OFFICIAL 2082/83 STATISTICAL DATA BASELINE:\n"
+    "- Economic Survey 2082/83 (आर्थिक सर्वेक्षण २०८२/८३):\n"
+    "  * Agriculture contribution to GDP: 24.03% (Primary sector contribution: 24.46%)\n"
+    "  * National GDP Growth Rate: 3.85%\n"
+    "  * National GDP Size: NPR 66.09 Kharba (रु. ६६ खर्ब ९ अर्ब)\n"
+    "  * Absolute Poverty Rate: 20.27%\n"
+    "- National Sample Census of Agriculture 2078 (NSO):\n"
+    "  * 4.13 million farm holdings (62% of households depend on agriculture)\n"
+    "  * Total agricultural land: 2.218 million hectares\n"
+    "  * Average holding size: 0.55 ha (heavily fragmented, ~2.8 parcels/holding)\n"
+    "  * 54.5% holdings irrigated, but barely one-third (~33%) have year-round irrigation\n\n"
+    "MANDATORY LEGISLATIVE & POLICY ANCHORS (2081/2082):\n"
+    "- National Agriculture Policy, 2081 (राष्ट्रिय कृषि नीति, २०८१): Federalized execution, contract farming, climate resilience.\n"
+    "- Agriculture Investment Decade 2081-2091 (कृषिमा लगानी दशक, २०८१-२०९१): Multi-sectoral capital mobilization.\n"
     "- Food Hygiene and Quality Act, 2081 (खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१): Farm-to-fork quality, SPS compliance, traceability.\n"
     "- Pesticides Management Act, 2076 & Pesticide Management Regulation, 2081.\n"
     "- Plant Protection Regulation (First Amendment), 2080.\n"
     "- 16th Periodic Plan (2081/82-2085/86): Production corridors and structural transformation.\n"
     "- Constitution of Nepal: Art. 36 (Food Sovereignty), Art. 51(h) (Policies on Agriculture/Land).\n"
     "- ADS (2015-2035) 4 Pillars: Governance, Productivity, Commercialization, Competitiveness.\n\n"
-    "AUTHENTIC STATISTICAL DATA:\n"
-    "- Economic Survey 2080/81: Agriculture contributes 24.09% to GDP; sector growth rate is 3.05%.\n"
-    "- Agri Census 2078 (NSO): 4.13 million holdings; 2.218 million ha cultivated land; 0.55 ha average parcel; 54.5% holdings irrigated (~33% year-round).\n\n"
     "MANDATORY GRAPH OR FLOWCHART INSTRUCTION:\n"
     "In every answer, include AT LEAST ONE graphical visualization using valid Mermaid syntax enclosed in " + TRIPLE_BACKTICKS + "mermaid ... " + TRIPLE_BACKTICKS + ".\n"
     "Depending on the question, provide either a Data Graph (`xychart-beta` / `pie`) or a Process Flowchart (`graph TD`).\n\n"
     "STRICT ANSWER ARCHITECTURE:\n"
-    "1. Concise Introduction (2-3 sentences)\n"
-    "2. Current Scenario & Verified Data Snapshot (3-4 bullet points)\n"
+    "1. Concise Introduction (2-3 sentences: concept, scope, importance)\n"
+    "2. Current Scenario & Verified Data Snapshot (cite Economic Survey 2082/83 & Census 2078)\n"
     "3. Mandatory Mermaid Diagram / Graph\n"
-    "4. Policy & Constitutional Linkage (National Agri Policy 2081, 16th Plan, Food Hygiene Act 2081)\n"
+    "4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
     "6. Key Operational Challenges (4-5 points)\n"
     "7. Actionable Way Forward (Federal, Provincial, Local roles)\n"
-    "8. Mnemonic for Quick Recall\n"
+    "8. Mnemonic for Quick Recall (English or Nepali acronym)\n"
     "9. Strategic Conclusion"
 )
 
@@ -240,7 +248,7 @@ def render_loksewa_content(content_text: str):
                 st.markdown(part)
 
 # -------------------------------------------------------------
-# DYNAMIC MODEL DISCOVERY (PREVENTS 404 ERRORS)
+# DYNAMIC MODEL DISCOVERY (PREVENTS 404/400 ERRORS)
 # -------------------------------------------------------------
 def get_groq_client(api_key: str):
     if not api_key:
@@ -253,10 +261,9 @@ def get_account_active_models(client):
         models = client.models.list()
         all_ids = [m.id for m in models.data]
         
-        # Filter for text chat models (exclude whisper audio)
+        # Filter for text chat models (exclude audio/safety guard)
         text_models = [m for m in all_ids if "whisper" not in m.lower() and "guard" not in m.lower()]
         
-        # Sort so preferred models appear at the top
         priority_order = [
             "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
@@ -324,7 +331,7 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     
     Adhere strictly to the required answer format:
     1. Concise Introduction (2-3 sentences)
-    2. Current Scenario & Official Data Snapshot (Economic Survey 2080/81 & Census 2078)
+    2. Current Scenario & Official Data Snapshot (Use Economic Survey 2082/83: Agri GDP Share 24.03%, GDP Growth 3.85%, and Census 2078)
     3. Mermaid Diagram or Data Graph (Use ```mermaid ... ```)
     4. Policy & Constitutional Linkage (National Agri Policy 2081, Investment Decade 2081-2091, Food Hygiene Act 2081, 16th Plan)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
@@ -370,10 +377,10 @@ with st.sidebar:
         st.markdown("---")
         st.markdown("### 🤖 Active Account Models")
         selected_text_model = st.selectbox(
-            "Writing Model (Verified Active):",
+            "Writing Model (Active & Validated):",
             text_options,
             index=0,
-            help="Populated directly from your Groq account so 404 errors can never occur."
+            help="Live model list from your account to prevent 404/400 errors."
         )
         selected_vision_model = vision_options[0]
     else:
@@ -381,14 +388,19 @@ with st.sidebar:
         selected_vision_model = "qwen/qwen3.8-27b"
 
     st.markdown("---")
-    st.markdown("### 📜 2080/81 Legal & Policy Updates")
+    st.markdown("### 📊 Updated Baseline: 2082/83")
     st.caption(
-        "• **राष्ट्रिय कृषि नीति, २०८१**\n"
-        "• **कृषिमा लगानी दशक (२०८१-२०९१)**\n"
-        "• **खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१**\n"
-        "• **विषादी व्यवस्थापन नियमावली, २०८१**\n"
-        "• **१६औँ आवधिक योजना (२०८१/८२-२०८५/८६)**\n"
-        "• **Economic Survey 2080/81** (AGDP: 24.09%)"
+        "• **आर्थिक सर्वेक्षण २०८२/८३:**\n"
+        "  - GDP मा कृषि अंश: **२४.०३ %**\n"
+        "  - प्राथमिक क्षेत्र: **२४.४६ %**\n"
+        "  - आर्थिक वृद्धिदर: **३.८५ %**\n"
+        "  - GDP आकार: **रु. ६६ खर्ब ९ अर्ब**\n"
+        "  - निरपेक्ष गरिबी: **२०.२७ %**\n"
+        "• **नीतिगत ढाँचा:**\n"
+        "  - राष्ट्रिय कृषि नीति, २०८१\n"
+        "  - कृषिमा लगानी दशक (२०८१–२०९१)\n"
+        "  - खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१\n"
+        "  - १६औँ योजना (२०८१/८२–२०८५/८६)"
     )
     st.markdown("---")
     saved_count = len(st.session_state["saved_notes"])
@@ -398,7 +410,7 @@ with st.sidebar:
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Answer Coach")
-st.caption("Live-Verified Models | Single & Bulk PDF Export | Serial Revision Bank")
+st.caption("Updated with Economic Survey 2082/83 & 2081 Policies | Batch & Single PDF Download")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -457,7 +469,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Preparing answer with 2081 policies and Mermaid visualization..."):
+                with st.spinner("Preparing answer with 2082/83 data and Mermaid visualization..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, selected_text_model)
                         st.session_state["current_ans"] = ans
@@ -569,7 +581,7 @@ with tab2:
     st.subheader("Type or Paste Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Explain the significance of the National Agriculture Policy, 2081 and Agriculture Investment Decade (2081-2091) in transforming commercial agriculture in Nepal. [10 marks]",
+        placeholder="e.g., Analyze the state of agricultural productivity in Nepal in light of Economic Survey 2082/83 and suggest strategic interventions under National Agriculture Policy, 2081. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -580,7 +592,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please type a question.")
         else:
-            with st.spinner("Preparing answer with latest 2081 acts and charts..."):
+            with st.spinner("Preparing answer with Economic Survey 2082/83 data..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, selected_text_model)
                     st.session_state["single_ans"] = ans
