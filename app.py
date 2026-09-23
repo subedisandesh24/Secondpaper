@@ -1,6 +1,7 @@
 import streamlit as st
 import base64
 import os
+import time
 from groq import Groq
 from PIL import Image
 import io
@@ -46,7 +47,7 @@ Your task is to produce a high-scoring, examiner-friendly Lok Sewa examination a
 """
 
 # -------------------------------------------------------------
-# AUTOMATIC MODEL SELECTION (HIGHEST PERFORMING MODELS)
+# HELPER FUNCTIONS
 # -------------------------------------------------------------
 def get_groq_client(api_key: str):
     if not api_key:
@@ -54,10 +55,9 @@ def get_groq_client(api_key: str):
     return Groq(api_key=api_key)
 
 def auto_detect_best_vision_model(client):
-    """Automatically selects the best active multimodal vision model available on the account."""
+    """Automatically selects the best active multimodal vision model available on Groq."""
     try:
         available_ids = [m.id for m in client.models.list().data]
-        # Priority list for vision/OCR models on Groq
         vision_hierarchy = [
             "qwen/qwen3.8-27b",
             "qwen/qwen3.6-27b"
@@ -65,12 +65,9 @@ def auto_detect_best_vision_model(client):
         for model in vision_hierarchy:
             if model in available_ids:
                 return model
-        
-        # Fallback search for any active vision/qwen model
         for m_id in available_ids:
             if "vision" in m_id.lower() or "qwen" in m_id.lower():
                 return m_id
-                
         return "qwen/qwen3.8-27b"
     except Exception:
         return "qwen/qwen3.8-27b"
@@ -92,26 +89,31 @@ def auto_detect_best_text_model(client):
     except Exception:
         return "llama-3.3-70b-versatile"
 
-def encode_image_to_base64(image: Image.Image) -> str:
-    buffered = io.BytesIO()
+def preprocess_and_encode_image(image: Image.Image) -> str:
+    """Resizes high-res images to max 1280px to drastically reduce token consumption."""
     if image.mode in ("RGBA", "P"):
         image = image.convert("RGB")
-    image.save(buffered, format="JPEG", quality=90)
+    
+    # Resize if larger than 1280px on any side
+    max_dimension = 1280
+    if max(image.size) > max_dimension:
+        image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        
+    buffered = io.BytesIO()
+    image.save(buffered, format="JPEG", quality=85)
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
 def extract_questions_from_image(client, image: Image.Image, vision_model: str):
-    """Uses Groq Vision to extract all numbered questions from the photo."""
-    base64_image = encode_image_to_base64(image)
+    """Uses Groq Vision with tight token limits to prevent 429 OTPM errors."""
+    base64_image = preprocess_and_encode_image(image)
     
     extraction_prompt = """
-    Examine this question paper photo carefully. 
-    Transcribe and extract ALL individual questions found on the paper (from Q1 up to Q12 or more).
-    Number each question clearly (e.g., Q1., Q2., Q3...).
-    If marks are indicated on the paper (e.g., [5], [10], 5+5=10), include them next to the question.
-    
-    Output ONLY the cleanly transcribed numbered questions. Do not include introductory or concluding commentary.
+    Examine this exam paper image. Extract and transcribe ALL questions concisely.
+    Number each question (Q1, Q2, Q3...). Include marks if shown (e.g. [5], [10]).
+    Output ONLY the questions. No intro, no conversational text.
     """
     
+    # max_tokens MUST be <= 800 to avoid Groq's 1000 OTPM rate limit on the free tier
     response = client.chat.completions.create(
         model=vision_model,
         messages=[
@@ -129,12 +131,12 @@ def extract_questions_from_image(client, image: Image.Image, vision_model: str):
             }
         ],
         temperature=0.1,
-        max_tokens=2048,
+        max_tokens=750,  # Safely stays below the 1000 OTPM limit
     )
     return response.choices[0].message.content
 
-def generate_loksewa_answer(client, question_text: str, marks: int, text_model: str):
-    """Generates the high-scoring, examiner-ready Lok Sewa answer."""
+def generate_loksewa_answer(client, question_text: str, marks: int, text_model: str, retries=2):
+    """Generates the Lok Sewa answer with automatic retry on temporary rate limits."""
     user_prompt = f"""
     Write a comprehensive, high-scoring examination answer for the following Lok Sewa Aayog (Nepal Agricultural Service) question:
     
@@ -143,9 +145,9 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     
     Strictly follow this structure:
     1. Introduction (concise, 2-4 sentences, concept & importance)
-    2. Current Scenario / Ground Reality in Nepal (Latest data, MoALD/CBS/ADS trends)
+    2. Current Scenario / Ground Reality in Nepal (Latest credible facts/data: MoALD, CBS, ADS)
     3. Policy, Legal & Constitutional Framework (Constitution, Sectoral Acts, Policies)
-    4. Text-based Flowchart / Diagram (MANDATORY text/ASCII diagram)
+    4. Text-based Flowchart / Diagram (MANDATORY ASCII/Text diagram)
     5. Main Analytical Body (Point -> Explanation -> Practical Implication)
     6. Key Challenges / Institutional Gaps
     7. Way Forward / Practical Measures (Separated by Federal, Provincial, Local levels)
@@ -153,16 +155,23 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     9. Conclusion (Policy -> Implementation -> Outcome)
     """
     
-    response = client.chat.completions.create(
-        model=text_model,
-        messages=[
-            {"role": "system", "content": LOKSEWA_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.2,
-        max_tokens=4096,
-    )
-    return response.choices[0].message.content
+    for attempt in range(retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model=text_model,
+                messages=[
+                    {"role": "system", "content": LOKSEWA_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                max_tokens=3500,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            if "429" in str(e) and attempt < retries:
+                time.sleep(5)  # Back off for 5 seconds on rate limit
+                continue
+            raise e
 
 # -------------------------------------------------------------
 # SIDEBAR
@@ -178,7 +187,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.success("⚡ **Auto-Engine Active**")
-    st.caption("• **Vision:** Auto-locks to top Multimodal OCR engine\n• **Writing:** Auto-locks to flagship 70B reasoning model")
+    st.caption("• **Vision:** Auto-locks to Multimodal OCR (Optimized for <1000 OTPM)\n• **Writing:** Flagship 70B Reasoning Model")
     st.markdown("---")
     st.info("🎯 **Target Examination:**\nNepal Agricultural Service\nGazetted Third Class (Officer Level)")
 
@@ -186,7 +195,7 @@ with st.sidebar:
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Aayog Agriculture Answer Generator")
-st.caption("Auto-configured with flagship Groq models for high-scoring subjective answers.")
+st.caption("Nepal Agricultural Service | Gazetted Third Class (Technical Officer / कृषि अधिकृत)")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to begin.")
@@ -204,7 +213,7 @@ tab1, tab2 = st.tabs(["📸 Question Paper Photo Upload (Up to 12 Questions)", "
 # =============================================================
 with tab1:
     st.subheader("Upload Exam Paper Snapshot")
-    st.write("Upload a photo containing up to 12 questions. The AI will parse each question and let you generate individual or bulk answers.")
+    st.write("Upload a photo containing up to 12 questions. The AI will extract and structure them.")
     
     uploaded_file = st.file_uploader("Upload Question Paper (JPG, PNG)...", type=["jpg", "jpeg", "png"])
     
@@ -217,7 +226,7 @@ with tab1:
             
         with col_act:
             if st.button("🔍 Extract All Questions from Image", type="primary", use_container_width=True):
-                with st.spinner("Extracting questions from photo..."):
+                with st.spinner("Processing image and extracting questions (optimized for token limits)..."):
                     try:
                         extracted_text = extract_questions_from_image(client, image, vision_engine)
                         st.session_state["extracted_questions_raw"] = extracted_text
@@ -239,14 +248,14 @@ with tab1:
         
         question_list = st.session_state.get("parsed_questions", [])
         
-        mode = st.radio("Select mode:", ["Answer a Specific Question", "Answer ALL Questions Sequentially"], horizontal=True)
+        mode = st.radio("Select answering mode:", ["Answer a Specific Question", "Answer ALL Questions Sequentially"], horizontal=True)
         
         if mode == "Answer a Specific Question":
             selected_q = st.selectbox("Select question to answer:", question_list)
             q_marks = st.selectbox("Select Marks:", [5, 10, 15], index=1)
             
             if st.button("🚀 Generate Lok Sewa Answer", type="primary"):
-                with st.spinner("Preparing answer with data, diagrams, and mnemonics..."):
+                with st.spinner("Drafting answer with facts, flowchart, and mnemonics..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_engine)
                         st.markdown("---")
@@ -269,7 +278,11 @@ with tab1:
                         all_answers.append(f"# {q_item}\n\n{ans}\n\n---\n")
                     except Exception as e:
                         all_answers.append(f"# {q_item}\n\nFailed to generate: {str(e)}\n\n---\n")
+                    
                     progress_bar.progress((idx + 1) / total_q)
+                    # Short pause to prevent hitting rate limits during bulk generation
+                    if idx < total_q - 1:
+                        time.sleep(2)
                 
                 final_combined = "\n\n".join(all_answers)
                 st.success("✅ All answers generated!")
@@ -282,7 +295,7 @@ with tab1:
 with tab2:
     st.subheader("Type or Paste Question")
     single_question = st.text_area("Enter question here (English or Nepali):", 
-                                  placeholder="e.g., Analyze the challenges of agricultural extension service delivery under the federal system of Nepal and suggest practical solutions. [10 marks]",
+                                  placeholder="e.g., Explain the importance and seed certification procedures of major cereal crops in Nepal. [10 marks]",
                                   height=120)
     
     col1, col2 = st.columns([1, 2])
@@ -293,7 +306,7 @@ with tab2:
         if not single_question.strip():
             st.warning("Please enter a question first.")
         else:
-            with st.spinner("Preparing answer with data, diagrams, and mnemonics..."):
+            with st.spinner("Formulating structured Lok Sewa answer..."):
                 try:
                     answer = generate_loksewa_answer(client, single_question, marks, text_engine)
                     st.markdown("---")
