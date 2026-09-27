@@ -166,7 +166,7 @@ class CleanNumberedCanvas(canvas.Canvas):
         
         self.setFont(PDF_FONT, 7.5)
         self.setFillColor(colors.HexColor('#64748b'))
-        self.drawString(40, 28, "Dynamic Subject-Tailored Model Answers & Flowchart Revision Notes")
+        self.drawString(40, 28, "Executive Multi-Track Process Models & Policy Target Notes")
         self.drawRightString(555, 28, f"Page {self._pageNumber} of {page_count}")
         self.restoreState()
 
@@ -178,7 +178,7 @@ def sanitize_mermaid_code(code: str) -> str:
     clean = code.strip()
     clean = re.sub(r'^(graph|flowchart)\s+(TD|TB|LR)', r'flowchart \2', clean, flags=re.IGNORECASE)
     clean = clean.replace('&nbsp;', ' ').replace('&bull;', '').replace('•', '-')
-    clean = re.sub(r'&(?!amp;|lt;|gt;)', 'and', clean)
+    clean = clean.replace(' & ', ' and ')
     clean = clean.replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '')
     return clean
 
@@ -250,7 +250,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             in_mermaid = False
             mermaid_code = sanitize_mermaid_code("\n".join(mermaid_lines))
             is_conclusion_flow = "flowchart lr" in mermaid_code.lower() or "graph lr" in mermaid_code.lower() or len(mermaid_lines) <= 6
-            diag_label = "CONCLUSION TARGET MICRO-FLOWCHART" if is_conclusion_flow else "TECHNICAL PROCESS / MECHANISM MODEL"
+            diag_label = "CONCLUSION TARGET MICRO-FLOWCHART" if is_conclusion_flow else "MULTI-TRACK EXECUTIVE PROCESS MODEL"
             
             png_bytes = fetch_mermaid_png_bytes(mermaid_code)
             if png_bytes:
@@ -258,10 +258,10 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
                     img_stream = io.BytesIO(png_bytes)
                     pil_img = Image.open(img_stream)
                     w, h = pil_img.size
-                    display_w = min(content_width, 450)
+                    display_w = min(content_width, 460)
                     display_h = (h / w) * display_w
-                    if display_h > 270:
-                        display_h = 270
+                    if display_h > 290:
+                        display_h = 290
                         display_w = (w / h) * display_h
                     img_stream.seek(0)
                     story.append(make_paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DT', fontName=PDF_FONT_BOLD, fontSize=8, textColor=colors.HexColor('#166534'), spaceAfter=4)))
@@ -352,7 +352,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
 # PDF BUILDER 2: DIAGRAMS-ONLY VISUAL REVISION BOOKLET
 # -------------------------------------------------------------
 def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
-    """Builds a PDF booklet containing ONLY questions, technical diagrams, and micro-flowcharts."""
+    """Builds a PDF booklet containing ONLY questions, multi-track diagrams, and micro-flowcharts."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=48, bottomMargin=48)
     styles = getSampleStyleSheet()
@@ -362,7 +362,7 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
     title_style = ParagraphStyle('DTitle', fontName=PDF_FONT_BOLD, fontSize=13.5, leading=17, textColor=colors.HexColor('#1b5e20'), alignment=1)
     sub_style = ParagraphStyle('DSub', fontName=PDF_FONT, fontSize=8.5, leading=12, textColor=colors.HexColor('#475569'), alignment=1)
     story.append(make_paragraph("<b>LOK SEWA AGRI OFFICER - TECHNICAL DIAGRAM CHEAT SHEET</b>", title_style))
-    story.append(make_paragraph("Context-Specific Process Models & Target-Linked Conclusion Micro-Flows", sub_style))
+    story.append(make_paragraph("Multi-Track Executive Summary Models & Target-Linked Conclusion Micro-Flows", sub_style))
     story.append(Spacer(1, 10))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#1b5e20'), spaceBefore=2, spaceAfter=12))
 
@@ -390,7 +390,7 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
             for d_idx, raw_code in enumerate(mermaid_blocks):
                 m_code = sanitize_mermaid_code(raw_code)
                 is_conclusion = "flowchart lr" in m_code.lower() or "graph lr" in m_code.lower() or len(m_code.strip().split('\n')) <= 6
-                label = "🎯 Conclusion Micro-Flowchart (Quick Recall)" if is_conclusion else f"🌾 Diagram {d_idx+1}: Topic Process Architecture"
+                label = "🎯 Conclusion Micro-Flowchart (Quick Recall)" if is_conclusion else f"🌾 Diagram {d_idx+1}: Executive Multi-Track Process Model"
                 
                 story.append(make_paragraph(f"<b>{label}</b>", ParagraphStyle('DH', fontName=PDF_FONT_BOLD, fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4)))
                 
@@ -400,10 +400,10 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
                         img_stream = io.BytesIO(png_bytes)
                         pil_img = Image.open(img_stream)
                         w, h = pil_img.size
-                        display_w = min(content_width, 440)
+                        display_w = min(content_width, 450)
                         display_h = (h / w) * display_w
-                        if display_h > 260:
-                            display_h = 260
+                        if display_h > 280:
+                            display_h = 280
                             display_w = (w / h) * display_h
                         img_stream.seek(0)
                         story.append(RLImage(img_stream, width=display_w, height=display_h))
@@ -463,7 +463,7 @@ LOKSEWA_SYSTEM_PROMPT = (
     "Nepal Agricultural Service (Gazetted Third Class / रा.प. तृतीय श्रेणी: Agronomy, Horticulture, Plant Protection, "
     "Soil Science, Agri Extension, and Agricultural Economics).\n\n"
     "CRITICAL CONSTRAINTS ON PRESENTATION & COHERENCE:\n"
-    "1. ABSOLUTE PROHIBITION ON WORD COUNTS: Do NOT display, calculate, or mention word counts, character counts, "
+    "1. ABSOLUTE PROHIBITION ON WORD COUNTS: Do NOT display, count, or mention word counts, character counts, "
     "or estimated writing times anywhere in the generated output.\n"
     "2. MANDATORY COHERENCE & PARAGRAPH LINKAGE: Every paragraph and section MUST be connected with clear transitional "
     "linkages. Never output isolated, disjointed bullet lists or abrupt headings. The narrative must flow organically:\n"
@@ -473,17 +473,20 @@ LOKSEWA_SYSTEM_PROMPT = (
     "   * Challenges to Strategic Solutions: Transition from operational bottlenecks into actionable institutional remedies and policy targets.\n"
     "3. ZERO PRE-MADE FILLER DATA: Do NOT regurgitate a fixed set of general macro indicators (like national GDP or general cereal lists) unless explicitly asked. "
     "Every empirical figure, threshold, rate, chemical dosage, or legal Act cited must be derived dynamically and be strictly relevant to the question's specific domain.\n\n"
-    "DYNAMIC SUBJECT-MATTER RULES:\n"
-    "- If Plant Pathology / Entomology: Focus on etiology, symptoms, infection/life cycle, ETL thresholds, and precise IPM chemical/bio-dosages (g/L or kg/ha). Diagram: Infection Cycle or IPM Decision Tree.\n"
-    "- If Agronomy / Seed Science: Focus on agro-ecology, certified seed classes, varietal release (SQCC), land preparation, sowing geometry, nutrient splitting, and Seed Replacement Rate (SRR). Diagram: Cultivation SOP or Seed Multiplication Loop.\n"
-    "- If Soil Science: Focus on soil chemical/physical properties, acidity dynamics, CCE calculation, nutrient interactions, Soil Health Card diagnostics, and fertilizer efficiency. Diagram: Nutrient Transformation or Liming Protocol.\n"
-    "- If Horticulture / Post-Harvest: Focus on rootstocks, canopy architecture, chilling hours, maturity indices, sorting, cold-chain preservation, and shelf-life extension. Diagram: Value Addition or Post-Harvest Preservation Flow.\n"
-    "- If Agricultural Extension & Policy: Focus on constitutional allocations (Schedules 5-9), three-tier institutional interfaces (Federal DoA, Provincial AKC, Local 753 units), technology adoption, and federal coordination. Diagram: Institutional Service Delivery Architecture.\n\n"
-    "MERMAID SYNTAX RULES (ZERO SYNTAX ERRORS):\n"
-    "- Always start the process diagram with `flowchart TD`.\n"
-    "- Use standard rectangular nodes: A[\"Stage Title<br/>- Technical detail 1<br/>- Technical detail 2\"].\n"
-    "- Do NOT use round brackets (), HTML tags like <b>, bullets like •, or raw ampersands & inside node text. Use 'and'.\n"
-    "- Make the diagram directly portray the core technical mechanism of the question.\n\n"
+    "EXECUTIVE-SUMMARY MULTI-TRACK MERMAID MODEL:\n"
+    "The first Mermaid diagram must serve as an EXECUTIVE SUMMARY OF THE ENTIRE ANSWER. If an examiner reads ONLY the diagram, "
+    "they must grasp the full technical mechanism and substance of your answer:\n"
+    "1. DO NOT BE LIMITED TO A SINGLE STRAIGHT LINE (A -> B -> C -> D). Use a MULTI-TRACK, BRANCHING, OR DUAL-LANE ARCHITECTURE:\n"
+    "   * Root Problem / Baseline Diagnosis branches into 2 Parallel Streams (e.g., Track A: Field/Biological Interventions vs. Track B: Institutional/Policy/Testing Interventions).\n"
+    "   * The parallel streams converge into Integrated Field Execution & Quality Control.\n"
+    "   * Concludes with an actionable Feedback, Compliance, or Reinvestment Loop.\n"
+    "2. DEEP TECHNICAL CONTENT IN NODES:\n"
+    "   * Each node must pack substantive technical details (exact chemical/biological active ingredients, dosages, soil pH numbers, NARC varieties, testing protocols, legal provisions).\n"
+    "   * Format inside rectangular nodes: A[\"Phase Title<br/>- Technical action 1 with exact metric<br/>- Technical action 2 with exact parameter\"].\n"
+    "3. SYNTAX-SAFE CONNECTIONS:\n"
+    "   * Start with `flowchart TD`.\n"
+    "   * Write connections on individual lines: `A --> B1` and `A --> B2`, then `B1 --> C` and `B2 --> C`.\n"
+    "   * Do NOT use unescaped brackets (), HTML tags like <b>, or raw ampersands & inside labels (write 'and').\n\n"
     "STRICTLY CONTEXTUAL CONCLUSION:\n"
     "- Synthesize a strategic vision directly answering the question's core problem.\n"
     "- Formulate an actionable field solution viable under Nepal's federal reality.\n"
@@ -505,11 +508,11 @@ def render_loksewa_content(content_text: str):
             raw_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
             mermaid_code = sanitize_mermaid_code(raw_code)
             line_count = len(mermaid_code.strip().split('\n'))
-            dyn_height = min(720, max(260, line_count * 42 + 110))
+            dyn_height = min(780, max(280, line_count * 40 + 120))
             container_id = f"mermaid_box_{diagram_count}_{int(time.time()*100)%10000}"
             
             is_micro = "flowchart lr" in mermaid_code.lower() or "graph lr" in mermaid_code.lower() or line_count <= 6
-            card_title = "🎯 Conclusion Micro-Flowchart (Quick Exam Recall)" if is_micro else "🌾 Question-Specific Technical Process Architecture"
+            card_title = "🎯 Conclusion Micro-Flowchart (Quick Exam Recall)" if is_micro else "🌾 Executive Multi-Track Technical Process Architecture"
             
             html_code = f"""
             <!DOCTYPE html>
@@ -523,7 +526,7 @@ def render_loksewa_content(content_text: str):
                     .outer-container {{
                         background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
                         border: 1px solid #cbd5e1; border-radius: 10px;
-                        padding: 14px; box-shadow: 0 3px 6px rgba(0,0,0,0.04); max-width: 820px; margin: 0 auto;
+                        padding: 14px; box-shadow: 0 3px 6px rgba(0,0,0,0.04); max-width: 860px; margin: 0 auto;
                     }}
                     .toolbar {{
                         display: flex; justify-content: space-between; align-items: center;
@@ -588,8 +591,8 @@ def render_loksewa_content(content_text: str):
                         const svgData = new XMLSerializer().serializeToString(svgEl);
                         const canvas = document.createElement('canvas');
                         const bbox = svgEl.getBoundingClientRect();
-                        canvas.width = Math.max(bbox.width, 600) * 2;
-                        canvas.height = Math.max(bbox.height, 320) * 2;
+                        canvas.width = Math.max(bbox.width, 650) * 2;
+                        canvas.height = Math.max(bbox.height, 350) * 2;
                         const ctx = canvas.getContext('2d');
                         const img = new Image();
                         const svgBlob = new Blob([svgData], {{type: 'image/svg+xml;charset=utf-8'}});
@@ -618,7 +621,7 @@ def render_loksewa_content(content_text: str):
                     st.download_button(
                         label=f"📸 Save Diagram #{diagram_count} as PNG",
                         data=png_bytes,
-                        file_name=f"technical_diagram_{diagram_count}_{int(time.time())}.png",
+                        file_name=f"executive_diagram_{diagram_count}_{int(time.time())}.png",
                         mime="image/png",
                         key=f"native_png_{diagram_count}_{int(time.time()*1000)%10000}"
                     )
@@ -626,7 +629,7 @@ def render_loksewa_content(content_text: str):
                     st.download_button(
                         label=f"💾 Save Diagram #{diagram_count} (.mmd)",
                         data=mermaid_code,
-                        file_name=f"technical_diagram_{diagram_count}.mmd",
+                        file_name=f"executive_diagram_{diagram_count}.mmd",
                         mime="text/plain",
                         key=f"native_mmd_{diagram_count}_{int(time.time()*1000)%10000}"
                     )
@@ -689,12 +692,16 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     QUESTION: {question_text}
     MARKS ALLOTTED: {marks} Marks
     
-    CRITICAL QUALITY & PRESENTATION MANDATES:
-    1. NO WORD COUNTS: Do NOT display, count, or mention word counts anywhere in the answer.
+    CRITICAL MANDATES:
+    1. NO WORD COUNTS: Do NOT display, count, or mention word counts anywhere in the output.
     2. SEAMLESS PARAGRAPH LINKAGE: Every section and paragraph must connect logically to the next using analytical transitional phrases. Ensure that the technical concepts flow smoothly into field practices, operational challenges, federal governance mandates, and policy solutions.
     3. ZERO PRE-MADE FILLER DATA: Do NOT provide generic national macroeconomic tables. Provide ONLY 3 to 4 domain-specific technical figures, chemical dosages, threshold metrics, or empirical data directly answering this topic.
     4. AUTHENTIC LEGAL & INSTITUTIONAL BASELINE: Dynamically cite the exact parent Acts, Regulations, and public agencies (MoALD, NARC, DoA, PQPMC, SQCC, DFTQC, Local Governments) governing this subject.
-    5. TECHNICAL DIAGRAM: Construct an authentic process model, life cycle, decision key, or institutional flow strictly matching this topic. Start with `flowchart TD`, use rectangular nodes: A["Stage Title<br/>- Detail 1<br/>- Detail 2"], and do NOT use unescaped brackets or symbols.
+    5. EXECUTIVE-SUMMARY MULTI-TRACK MERMAID MODEL:
+       - The diagram must serve as a comprehensive executive summary of your entire answer.
+       - DO NOT use a single straight line. Structure it as a multi-track branching flow (e.g., Problem Baseline splits into Parallel Stream 1 [Field/Bio Action] and Parallel Stream 2 [Institutional/Policy Action], converging into Integrated Execution and closing with a Feedback/Sustainability loop).
+       - Each node must pack substantive technical details (dosages, thresholds, varieties, or specific parameters) with `<br/>- ` bullet lines.
+       - Start with `flowchart TD`, use standard rectangular nodes: A["Title<br/>- Detail 1<br/>- Detail 2"], and write link arrows on separate lines (e.g., A --> B1 and A --> B2, then B1 --> C and B2 --> C).
     6. MAIN ANALYTICAL CORE: Sharp, officer-grade technical points with bold headings, cause-and-effect explanations, and field-level applications in Nepal.
     7. OPERATIONAL CHALLENGES & FEDERAL WAY FORWARD: Specific to this topic's reality under Nepal's three-tier federal structure.
     8. RAPID RECALL MNEMONIC: A 1-2 sentence real-world narrative micro-story in English connecting the analytical core points.
@@ -734,11 +741,11 @@ st.sidebar.markdown(f"### 📚 Active Session Bank: **{saved_count}** Notes")
 st.sidebar.caption("🔒 Session-Only Memory: Data automatically erases when you close this browser tab.")
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "**Dynamic Evaluation Engine:**\n"
+    "**Executive Evaluation Engine:**\n"
+    "• Multi-Track Executive Summary Diagrams\n"
     "• Zero Hardcoded / Pre-made Filler Data\n"
     "• Cohesive Paragraph Linkages & Flow\n"
     "• Hidden Word Count Metadata\n"
-    "• Syntax-Safe Mermaid Flowcharts\n"
     "• Question-Linked Policy Targets\n"
     "• Diagrams-Only Visual Revision PDF"
 )
@@ -747,7 +754,7 @@ st.sidebar.info(
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Dynamic Coach")
-st.caption("Cohesive Paragraph Linkages | Discipline-Specific Technical Models | Direct Policy Linkages | Diagrams-Only PDF Booklet")
+st.caption("Multi-Track Executive Diagrams | Cohesive Paragraph Linkages | Direct Policy Linkages | Diagrams-Only PDF Booklet")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -799,7 +806,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Dynamic Answer", type="primary"):
-                with st.spinner("Evaluating question domain and generating cohesive answer..."):
+                with st.spinner("Evaluating question domain and generating cohesive answer with multi-track diagram..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -860,7 +867,7 @@ with tab1:
                     st.download_button(label=f"📥 Download Full Q&A PDF ({len(bulk_data)})", data=bulk_pdf_bytes, file_name="all_model_answers.pdf", mime="application/pdf", use_container_width=True)
                 with col_b2:
                     diag_only_pdf = generate_diagrams_only_pdf_bytes(bulk_data)
-                    st.download_button(label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(bulk_data)})", data=diag_only_pdf, file_name="technical_diagrams_only.pdf", mime="application/pdf", type="primary", use_container_width=True)
+                    st.download_button(label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(bulk_data)})", data=diag_only_pdf, file_name="executive_diagrams_only.pdf", mime="application/pdf", type="primary", use_container_width=True)
                 with col_b3:
                     if st.button("⭐ Save ALL to Active Session", use_container_width=True):
                         for b_item in bulk_data:
@@ -890,7 +897,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please enter a question.")
         else:
-            with st.spinner("Analyzing question domain and crafting custom cohesive answer..."):
+            with st.spinner("Analyzing question domain and crafting custom cohesive answer with multi-track diagram..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
@@ -918,7 +925,7 @@ with tab2:
             st.download_button(label="📥 Full Answer PDF", data=pdf_data, file_name="loksewa_model_answer.pdf", mime="application/pdf", use_container_width=True)
         with col_pdf2:
             single_diag_pdf = generate_diagrams_only_pdf_bytes([{"question": st.session_state["single_q"], "answer": st.session_state["single_ans"]}])
-            st.download_button(label="🖼️ Diagrams-Only PDF", data=single_diag_pdf, file_name="technical_diagram_cheat_sheet.pdf", mime="application/pdf", type="primary", use_container_width=True)
+            st.download_button(label="🖼️ Diagrams-Only PDF", data=single_diag_pdf, file_name="executive_diagram_cheat_sheet.pdf", mime="application/pdf", type="primary", use_container_width=True)
                 
         render_loksewa_content(st.session_state["single_ans"])
 
@@ -948,7 +955,7 @@ with tab3:
             st.download_button(
                 label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(notes)} Q&A)",
                 data=all_diags_pdf,
-                file_name="technical_diagrams_revision_booklet.pdf",
+                file_name="executive_diagrams_revision_booklet.pdf",
                 mime="application/pdf",
                 type="primary",
                 use_container_width=True
