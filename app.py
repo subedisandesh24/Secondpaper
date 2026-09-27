@@ -127,7 +127,7 @@ class CleanNumberedCanvas(canvas.Canvas):
         
         self.setFont(PDF_FONT, 7.5)
         self.setFillColor(colors.HexColor('#64748b'))
-        self.drawString(40, 28, "Circular Visual Process Model & Target-Driven Policy Notes")
+        self.drawString(40, 28, "Descriptive Process Architecture & Target-Driven Policy Notes")
         self.drawRightString(555, 28, f"Page {self._pageNumber} of {page_count}")
         self.restoreState()
 
@@ -141,7 +141,7 @@ def fetch_mermaid_png_bytes(mermaid_code: str):
         encoded = base64.b64encode(clean_code.encode("utf-8")).decode("ascii")
         url = f"https://mermaid.ink/img/{encoded}?bgColor=FFFFFF"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        with urllib.request.urlopen(req, timeout=4.0) as resp:
+        with urllib.request.urlopen(req, timeout=4.5) as resp:
             if resp.status == 200:
                 return resp.read()
     except Exception:
@@ -194,20 +194,20 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
         elif in_mermaid and TRIPLE_BACKTICKS in line:
             in_mermaid = False
             mermaid_code = "\n".join(mermaid_lines)
-            is_conclusion_flow = "graph lr" in mermaid_code.lower() or len(mermaid_lines) <= 5
-            diag_label = "CONCLUSION TARGET MICRO-FLOWCHART" if is_conclusion_flow else "CIRCULAR / CLOSED-LOOP PROCESS MODEL"
+            is_conclusion_flow = "graph lr" in mermaid_code.lower() or len(mermaid_lines) <= 6
+            diag_label = "CONCLUSION TARGET MICRO-FLOWCHART" if is_conclusion_flow else "DESCRIPTIVE PROCESS ARCHITECTURE"
             
-            # Embed real PNG image in PDF
+            # Embed image in PDF
             png_bytes = fetch_mermaid_png_bytes(mermaid_code)
             if png_bytes:
                 try:
                     img_stream = io.BytesIO(png_bytes)
                     pil_img = Image.open(img_stream)
                     w, h = pil_img.size
-                    display_w = min(content_width, 400)
+                    display_w = min(content_width, 450)
                     display_h = (h / w) * display_w
-                    if display_h > 240:
-                        display_h = 240
+                    if display_h > 270:
+                        display_h = 270
                         display_w = (w / h) * display_h
                     img_stream.seek(0)
                     story.append(Paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DT', fontName=PDF_FONT_BOLD, fontSize=8, textColor=colors.HexColor('#166534'), spaceAfter=4)))
@@ -217,10 +217,10 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
                 except Exception:
                     pass
 
-            # Fallback text card if image server is unreachable
+            # Fallback text card
             diag_elements = [Paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DTF', fontName=PDF_FONT_BOLD, fontSize=8, textColor=colors.HexColor('#166534'), spaceAfter=3))]
             for m_line in mermaid_lines:
-                clean_l = m_line.replace("([", "").replace("])", "").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' ').strip()
+                clean_l = m_line.replace("([", "").replace("])", "").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' - ').strip()
                 if clean_l and not clean_l.lower().startswith(('graph', 'flowchart', 'subgraph', 'end', '%%')):
                     diag_elements.append(Paragraph(f"&bull;&nbsp;{clean_pdf_text(clean_l)}", diag_row_style))
             
@@ -265,7 +265,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
 # PDF BUILDER 2: DIAGRAMS-ONLY VISUAL REVISION BOOKLET
 # -------------------------------------------------------------
 def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
-    """Builds a PDF booklet containing ONLY questions, circular process diagrams, and micro-flowcharts."""
+    """Builds a PDF booklet containing ONLY questions, descriptive process diagrams, and micro-flowcharts."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=48, bottomMargin=48)
     styles = getSampleStyleSheet()
@@ -274,8 +274,8 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
 
     title_style = ParagraphStyle('DTitle', fontName=PDF_FONT_BOLD, fontSize=13.5, leading=17, textColor=colors.HexColor('#1b5e20'), alignment=1)
     sub_style = ParagraphStyle('DSub', fontName=PDF_FONT, fontSize=8.5, leading=12, textColor=colors.HexColor('#475569'), alignment=1)
-    story.append(Paragraph("<b>LOK SEWA AGRI OFFICER - CIRCULAR DIAGRAM CHEAT SHEET</b>", title_style))
-    story.append(Paragraph("Eye-Catching Closed-Loop Process Diagrams & Target-Driven Conclusion Flows", sub_style))
+    story.append(Paragraph("<b>LOK SEWA AGRI OFFICER - DESCRIPTIVE DIAGRAM CHEAT SHEET</b>", title_style))
+    story.append(Paragraph("High-Impact Descriptive Technical Models & Target-Linked Conclusion Micro-Flows", sub_style))
     story.append(Spacer(1, 10))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#1b5e20'), spaceBefore=2, spaceAfter=12))
 
@@ -302,7 +302,7 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
         else:
             for d_idx, m_code in enumerate(mermaid_blocks):
                 is_conclusion = "graph lr" in m_code.lower() or len(m_code.strip().split('\n')) <= 6
-                label = "🎯 Conclusion Micro-Flowchart (Quick Exam Recall)" if is_conclusion else f"🌾 Diagram {d_idx+1}: Circular Stage-by-Stage Closed-Loop Model"
+                label = "🎯 Conclusion Micro-Flowchart (Quick Exam Recall)" if is_conclusion else f"🌾 Diagram {d_idx+1}: Descriptive Technical Architecture (Examiner-Impression Model)"
                 
                 story.append(Paragraph(f"<b>{label}</b>", ParagraphStyle('DH', fontName=PDF_FONT_BOLD, fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4)))
                 
@@ -312,10 +312,10 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
                         img_stream = io.BytesIO(png_bytes)
                         pil_img = Image.open(img_stream)
                         w, h = pil_img.size
-                        display_w = min(content_width, 420)
+                        display_w = min(content_width, 440)
                         display_h = (h / w) * display_w
-                        if display_h > 230:
-                            display_h = 230
+                        if display_h > 260:
+                            display_h = 260
                             display_w = (w / h) * display_h
                         img_stream.seek(0)
                         story.append(RLImage(img_stream, width=display_w, height=display_h))
@@ -327,7 +327,7 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
                 # Fallback text card
                 steps_data = []
                 for line in m_code.strip().split('\n'):
-                    clean_l = line.replace("([", "").replace("])", "").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' ').strip()
+                    clean_l = line.replace("([", "").replace("])", "").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' - ').strip()
                     if clean_l and not clean_l.lower().startswith(('graph', 'flowchart', 'subgraph', 'end')):
                         steps_data.append(Paragraph(f"&bull;&nbsp;{clean_pdf_text(clean_l)}", ParagraphStyle('FST', fontName=PDF_FONT, fontSize=8, leading=11)))
                 
@@ -369,43 +369,54 @@ def generate_bulk_pdf_bytes(qa_list: list) -> bytes:
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT (CIRCULAR DIAGRAMS + QUANTIFIED TARGETS)
+# LOK SEWA SYSTEM PROMPT (EXAMINER-IMPRESSIVE DIAGRAM + 3-PILLAR CONCLUSION)
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
-    "You are an elite Nepal Lok Sewa Aayog Senior Evaluator and Coach for the Nepal Agricultural Service "
-    "(Gazetted 3rd Class - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
-    "STRICT MERMAID DIAGRAM DIRECTIVE: CIRCULAR, COMPACT & EYE-CATCHY (MAX 4 TO 6 NODES):\n"
-    "1. DO NOT create long, tedious, sprawling vertical charts. Evaluators want punchy, visually memorable models that can be drawn in 30 seconds!\n"
-    "2. Make the main diagram CIRCULAR / CLOSED-LOOP or a BALANCED CYCLE connecting back to the beginning:\n"
-    "   * Use stadium or rounded shapes: A([\"1. Quality Inputs & Seed\"]) --> B([\"2. Microclimate & Field Care\"]) --> C([\"3. Loss-Abatement & Cold Chain\"]) --> D([\"4. Value Addition & Market Linkage\"]) -->|\"Reinvestment & Seed Recycling\"| A\n"
-    "   * Strictly 4 to 6 nodes total. Clear numbered stages (1, 2, 3, 4).\n"
-    "3. Keep text inside nodes very concise (2-4 words per line, using `<br/>`). Wrap node text in double quotes.\n\n"
-    "STRATEGIC CONCLUSION DIRECTIVE: EXPLICIT QUANTIFIED POLICY TARGETS & DUAL STRATEGY:\n"
-    "In the conclusion, YOU MUST CITE SPECIFIC OFFICIAL QUANTIFIED TARGETS of the Government of Nepal:\n"
-    "1. DUAL STRATEGY PERSPECTIVE: Explain that production increment alone is insufficient; cutting post-harvest losses (saving the 20-35% perishable waste) is cost-effective, climate-resilient, and imperative to meet national targets.\n"
-    "2. QUANTIFIED TARGETS TO CITE (Select relevant ones based on question):\n"
-    "   * 16th Periodic Plan (2081/82-2085/86) Targets: Target 5.0%+ real agricultural GDP growth, reducing multidimensional poverty below 12%, achieving staple cereal self-reliance.\n"
-    "   * ADS (Agriculture Development Strategy 2015-2035) Targets: Slashing post-harvest loss from 25-35% down to <15%; expanding commercialization from 10% to >50%; expanding year-round irrigation.\n"
-    "   * National Seed Vision Targets: Achieving 25-33% Seed Replacement Rate (SRR).\n"
-    "   * SDG 2 (Zero Hunger by 2030): Ending hunger, reducing child stunting below 15%, doubling agricultural productivity.\n"
-    "   * Food Hygiene and Quality Act 2081: 100% farm-to-fork SPS and residue compliance.\n"
-    "3. CONCLUSION MICRO-FLOWCHART: End with an EXACTLY 3-to-4 node horizontal flowchart (`graph LR`) connecting policy inputs to the specific target outcome for 15-second exam recall.\n\n"
+    "You are an elite Nepal Lok Sewa Aayog Chief Evaluator and Mentor for the Nepal Agricultural Service "
+    "(Gazetted 3rd Class / रा.प. तृतीय श्रेणी: Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
+    "CRITICAL DIRECTIVE 1: FIRST MERMAID DIAGRAM MUST BE HIGHLY DESCRIPTIVE & EXAMINER-IMPRESSIVE:\n"
+    "1. The checker must look at the first diagram and immediately recognize technical officer-level depth.\n"
+    "2. Structure it as a closed-loop circular or multi-tiered process (4 to 5 connected stages).\n"
+    "3. EACH NODE MUST BE RICH & DESCRIPTIVE (NOT single words). Inside each stadium node `([ ... ])`, include:\n"
+    "   * Bold Stage Title\n"
+    "   * 2 specific, technical interventions/parameters separated by `<br/>• ` (e.g., specific chemical names, biological control agents, NARC varieties, temperatures, soil pH ranges, ETL thresholds, or equipment).\n"
+    "   * Example Syntax:\n"
+    "     A([\"<b>Stage 1: Input & Seed Precision</b><br/>• SQCC Certified Seed / Seed Priming<br/>• Agri-lime for pH 6.0-6.5 & FYM\"]) --> B([\"<b>Stage 2: Integrated Field Care</b><br/>• Micro-irrigation & Leaf Color Chart<br/>• Customized Split NPK & Bio-fertilizer\"])\n"
+    "     B --> C([\"<b>Stage 3: Eco-Friendly Protection</b><br/>• ETL-based Bio-IPM Monitoring<br/>• Trichoderma & Pheromone Traps\"])\n"
+    "     C --> D([\"<b>Stage 4: Post-Harvest & Cold Chain</b><br/>• Zero Energy Cool Chamber / Grading<br/>• Hermetic Storage & Moisture Control\"])\n"
+    "     D --> E([\"<b>Stage 5: Market & Traceability</b><br/>• AKC-Cooperative Contract Linkage<br/>• Food Hygiene Act 2081 QR Labeling\"])\n"
+    "     E -->|\"Resource Reinvestment & Nutrient Cycle\"| A\n"
+    "4. Always wrap all node text in double quotes.\n\n"
+    "CRITICAL DIRECTIVE 2: 3-PILLAR STRATEGIC CONCLUSION (DUAL STRATEGY + SOLUTION + SPECIFIC TARGETS):\n"
+    "The conclusion MUST be structured into these 3 rigorous pillars:\n"
+    "1. PILLAR 1: DUAL STRATEGY PERSPECTIVE:\n"
+    "   * Highlight that production intensification alone is futile if 20-35% of harvested produce is lost before reaching consumers. Dual focus on sustainable production + aggressive post-harvest loss reduction is the only economically viable path.\n"
+    "2. PILLAR 2: CONCRETE OPERATIONAL SOLUTION:\n"
+    "   * Provide specific, field-level solutions (e.g. cluster-level Zero Energy Cool Chambers, decentralized solar cold rooms, hermetic grain storage bags, farmer cooperative contract farming under National Agri Policy 2081).\n"
+    "3. PILLAR 3: LINKAGE WITH SPECIFIC GOVERNMENT TARGETS:\n"
+    "   * Quantify exact national targets from official documents:\n"
+    "     - 16th Periodic Plan (2081/82-2085/86): Real AGDP growth of 5.0%+, multidimensional poverty reduction below 12%, staple cereal self-sufficiency.\n"
+    "     - ADS (2015-2035): Slashing post-harvest losses from 25-35% down to <15%; expanding commercialization from 10% to >50%.\n"
+    "     - National Seed Vision: Achieving 25-33% Seed Replacement Rate (SRR).\n"
+    "     - SDG 2 (Zero Hunger) & Food Hygiene Act 2081: Child stunting reduction below 15% and 100% farm-to-fork food safety.\n"
+    "4. CONCLUSION MICRO-FLOWCHART:\n"
+    "   * End with an EXACTLY 3-to-4 node horizontal flowchart (`graph LR`) connecting: `[Dual Strategy Focus] --> [Practical Operational Solution] --> [Achieving Specific Target]` for a 15-second exam sketch.\n\n"
     "SECTION 2 STRICT DOMAIN SPECIFICITY:\n"
     "- Provide ONLY 3-4 metrics specific to the question domain (Soils: ~52% acidity, ~45% low SOM; Protection: 27 banned active ingredients, 396g a.i./ha; Horticulture: 25-35% post-harvest loss, ~2.5L MT cold storage; Agronomy: Paddy 5.72M MT at 3.98-4.14 MT/ha; Extension: 1:1,500 ratio, 51 AKCs). No generic GDP copy-paste.\n\n"
     "STANDARD ANSWER ARCHITECTURE:\n"
     "1. Concise Introduction (2-3 sentences)\n"
     "2. Current Scenario & Sectoral Data Snapshot (Context-specific indicators ONLY)\n"
-    "3. Eye-Catching Circular Process Diagram (Closed-loop / cyclic Mermaid chart, 4-6 nodes max)\n"
+    "3. First Mermaid Diagram: Descriptive, Checker-Impressive Circular Technical Architecture (Stadium nodes with bulleted technical metrics)\n"
     "4. Policy, Legal & Institutional Linkages (16th Plan, Food Hygiene Act 2081, etc.)\n"
     "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
     "6. Key Operational Challenges (4-5 points)\n"
     "7. Actionable Way Forward (Three-tier federal roles: Federal, Provincial, Local)\n"
     "8. Story-Based Mnemonic for Rapid Recall (English micro-story)\n"
-    "9. Strategic Conclusion with Quantified Targets & Quick-Recall Micro-Flowchart (Dual strategy + specific numerical targets + 3-4 node `graph LR` diagram)"
+    "9. Strategic Conclusion (3-Pillar structure: Dual Strategy -> Concrete Solution -> Quantified Target Linkage + Conclusion Micro-Flowchart `graph LR`)"
 )
 
 # -------------------------------------------------------------
-# RESPONSIVE CONTENT RENDERER WITH STYLISH CIRCULAR DISPLAY
+# RESPONSIVE CONTENT RENDERER WITH DESCRIPTIVE DIAGRAM VIEWER
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
@@ -417,11 +428,11 @@ def render_loksewa_content(content_text: str):
             diagram_count += 1
             mermaid_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
             line_count = len(mermaid_code.strip().split('\n'))
-            dyn_height = min(600, max(240, line_count * 38 + 90))
+            dyn_height = min(720, max(260, line_count * 42 + 110))
             container_id = f"mermaid_box_{diagram_count}_{int(time.time()*100)%10000}"
             
             is_micro = "graph lr" in mermaid_code.lower() or line_count <= 6
-            card_title = "🎯 Target-Driven Conclusion Micro-Flowchart" if is_micro else "🔄 Circular / Closed-Loop Process Architecture"
+            card_title = "🎯 3-Pillar Conclusion Micro-Flowchart (Quick Recall)" if is_micro else "🌾 Descriptive Technical Process Architecture (Examiner-Impression Model)"
             
             html_code = f"""
             <!DOCTYPE html>
@@ -435,21 +446,21 @@ def render_loksewa_content(content_text: str):
                     .outer-container {{
                         background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
                         border: 1px solid #cbd5e1; border-radius: 10px;
-                        padding: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.03); max-width: 780px; margin: 0 auto;
+                        padding: 14px; box-shadow: 0 3px 6px rgba(0,0,0,0.04); max-width: 820px; margin: 0 auto;
                     }}
                     .toolbar {{
                         display: flex; justify-content: space-between; align-items: center;
-                        margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;
+                        margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;
                     }}
-                    .title-tag {{ font-size: 11.5px; font-weight: 700; color: #166534; text-transform: uppercase; }}
+                    .title-tag {{ font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase; }}
                     .action-btn {{
                         background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;
-                        padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer;
+                        padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;
                     }}
                     .action-btn:hover {{ background: #dcfce7; }}
                     .diagram-viewport {{
                         display: flex; justify-content: center; align-items: center;
-                        background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; overflow-x: auto;
+                        background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; overflow-x: auto;
                     }}
                     .mermaid svg {{ max-width: 100% !important; height: auto !important; }}
                 </style>
@@ -474,7 +485,7 @@ def render_loksewa_content(content_text: str):
                         theme: 'neutral',
                         securityLevel: 'loose',
                         themeVariables: {{
-                            fontSize: '12.5px',
+                            fontSize: '12px',
                             fontFamily: '-apple-system, sans-serif',
                             primaryColor: '#e0f2fe',
                             primaryBorderColor: '#0284c7',
@@ -491,8 +502,8 @@ def render_loksewa_content(content_text: str):
                         const svgData = new XMLSerializer().serializeToString(svgEl);
                         const canvas = document.createElement('canvas');
                         const bbox = svgEl.getBoundingClientRect();
-                        canvas.width = Math.max(bbox.width, 550) * 2;
-                        canvas.height = Math.max(bbox.height, 280) * 2;
+                        canvas.width = Math.max(bbox.width, 600) * 2;
+                        canvas.height = Math.max(bbox.height, 320) * 2;
                         const ctx = canvas.getContext('2d');
                         const img = new Image();
                         const svgBlob = new Blob([svgData], {{type: 'image/svg+xml;charset=utf-8'}});
@@ -503,7 +514,7 @@ def render_loksewa_content(content_text: str):
                             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                             URL.revokeObjectURL(url);
                             const w = window.open("");
-                            w.document.write('<title>Circular Diagram</title><body style="margin:0;display:flex;justify-content:center;background:#f8fafc;"><img src="' + canvas.toDataURL() + '" style="max-width:100%;height:auto;margin:20px;box-shadow:0 4px 10px rgba(0,0,0,0.08);border-radius:8px;"/></body>');
+                            w.document.write('<title>Descriptive Diagram</title><body style="margin:0;display:flex;justify-content:center;background:#f8fafc;"><img src="' + canvas.toDataURL() + '" style="max-width:100%;height:auto;margin:20px;box-shadow:0 4px 12px rgba(0,0,0,0.09);border-radius:8px;"/></body>');
                         }};
                         img.src = url;
                     }}
@@ -521,7 +532,7 @@ def render_loksewa_content(content_text: str):
                     st.download_button(
                         label=f"📸 Save Diagram #{diagram_count} as PNG",
                         data=png_bytes,
-                        file_name=f"circular_diagram_{diagram_count}_{int(time.time())}.png",
+                        file_name=f"descriptive_diagram_{diagram_count}_{int(time.time())}.png",
                         mime="image/png",
                         key=f"native_png_{diagram_count}_{int(time.time()*1000)%10000}"
                     )
@@ -529,7 +540,7 @@ def render_loksewa_content(content_text: str):
                     st.download_button(
                         label=f"💾 Save Diagram #{diagram_count} (.mmd)",
                         data=mermaid_code,
-                        file_name=f"circular_diagram_{diagram_count}.mmd",
+                        file_name=f"descriptive_diagram_{diagram_count}.mmd",
                         mime="text/plain",
                         key=f"native_mmd_{diagram_count}_{int(time.time()*1000)%10000}"
                     )
@@ -595,16 +606,20 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     MANDATORY CRITICAL DIRECTIVES:
     1. Concise Introduction: 2-3 sentences.
     2. Section 2 (Data Snapshot): 3-4 CONTEXTUAL metrics strictly belonging to this question's domain (no generic GDP copy-paste).
-    3. Conceptual Diagram: MUST BE CIRCULAR / CLOSED-LOOP & EYE-CATCHY (strictly 4 to 6 nodes max, e.g. A([1. Step]) --> B([2. Step]) --> C([3. Step]) --> D([4. Step]) -->|Cycle| A). Keep text inside nodes very short and readable.
+    3. First Mermaid Diagram (EXAMINER-IMPRESSIVE & DESCRIPTIVE):
+       - Build a closed-loop or multi-tiered technical architecture (4 to 5 stages).
+       - Make each node richly descriptive: inside stadium `(["..."])`, provide bold title AND 2-3 specific technical interventions/metrics separated by `<br/>• ` (e.g., specific chemical names, biological control agents, NARC varieties, temperatures, soil pH ranges, ETL thresholds, or equipment).
+       - Impress the examiner at first glance with subject-matter mastery.
     4. Policy Linkage: 16th Plan, Food Hygiene Act 2081, Pesticides Regulation 2081, etc.
     5. Main Analytical Core: 5-7 punchy points (Heading -> Cause/Effect -> Practical Implication).
     6. Operational Challenges: 4-5 field-level bottlenecks.
     7. Actionable Way Forward: Three-tier federal role allocation.
     8. Rapid Recall Mnemonic: 1-2 sentence real-world micro-story in English.
-    9. Strategic Conclusion with Quantified Government Targets:
-       - State the DUAL STRATEGY: Combine production enhancement with aggressive POST-HARVEST LOSS REDUCTION (saving 20-35% of produce).
-       - EXPLICITLY CITE EXACT POLICY TARGETS: e.g., 16th Plan target of 5.0% agricultural growth; ADS target of reducing post-harvest losses below 15% and commercialization above 50%; National Seed Vision 25-33% SRR target; SDG-2 zero hunger.
-       - End with an EXACTLY 3-4 node horizontal flowchart (`graph LR`) connecting policy inputs to the target outcome for 15-second exam recall.
+    9. Strategic Conclusion (STRICT 3-PILLAR FORMULA):
+       - Pillar 1 (Dual Strategy): Address both production increase AND post-harvest loss reduction (mitigating 20-35% loss).
+       - Pillar 2 (Concrete Solution): Field-level solutions (cool chambers, hermetic storage, cooperative aggregation, contract farming under National Agri Policy 2081).
+       - Pillar 3 (Link to Quantified Targets): Citing exact figures from 16th Plan (5% AGDP growth, poverty <12%), ADS (post-harvest loss <15%, commercialization >50%), National Seed Vision (25-33% SRR), or SDG 2.
+       - End with an EXACTLY 3-4 node horizontal flowchart (`graph LR`): `[Dual Strategy Focus] --> [Practical Field Solution] --> [Policy Target Attained]`.
     """
     for attempt in range(retries + 1):
         try:
@@ -636,10 +651,10 @@ st.sidebar.markdown(f"### 📚 Active Session Bank: **{saved_count}** Notes")
 st.sidebar.caption("🔒 Session-Only Memory: Data automatically erases when you close this browser tab.")
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "**Core Visual & Target Directives:**\n"
-    "• Circular / Closed-Loop Diagrams (4-6 nodes max)\n"
-    "• Quantified Policy Targets in Conclusion\n"
-    "• Post-Harvest Loss Reduction (<15% ADS target)\n"
+    "**Core Evaluation Architecture:**\n"
+    "• Descriptive Technical First Diagram (Impression Model)\n"
+    "• 3-Pillar Conclusion (Dual Strategy -> Solution -> Targets)\n"
+    "• Quantified 16th Plan & ADS Metrics\n"
     "• Diagrams-Only Visual Revision PDF"
 )
 
@@ -647,7 +662,7 @@ st.sidebar.info(
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Visual Coach")
-st.caption("Eye-Catching Circular Diagrams | Target-Driven Conclusions | Diagrams-Only PDF Booklet | Auto-Erasing Session")
+st.caption("Descriptive Examiner-Grade Diagrams | 3-Pillar Target-Driven Conclusions | Diagrams-Only PDF Booklet")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -699,7 +714,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Generating circular diagram, domain metrics, and target-driven conclusion..."):
+                with st.spinner("Generating descriptive diagram, domain metrics, and 3-pillar conclusion..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -760,7 +775,7 @@ with tab1:
                     st.download_button(label=f"📥 Download Full Q&A PDF ({len(bulk_data)})", data=bulk_pdf_bytes, file_name="all_model_answers.pdf", mime="application/pdf", use_container_width=True)
                 with col_b2:
                     diag_only_pdf = generate_diagrams_only_pdf_bytes(bulk_data)
-                    st.download_button(label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(bulk_data)})", data=diag_only_pdf, file_name="circular_diagrams_only.pdf", mime="application/pdf", type="primary", use_container_width=True)
+                    st.download_button(label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(bulk_data)})", data=diag_only_pdf, file_name="descriptive_diagrams_only.pdf", mime="application/pdf", type="primary", use_container_width=True)
                 with col_b3:
                     if st.button("⭐ Save ALL to Active Session", use_container_width=True):
                         for b_item in bulk_data:
@@ -779,7 +794,7 @@ with tab2:
     st.subheader("Type or Paste Exam Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Analyze the food security challenges in Nepal. How does cutting post-harvest losses contribute toward achieving the targets of the 16th Periodic Plan and ADS? Illustrate with a circular diagram. [10 marks]",
+        placeholder="e.g., Analyze the food security challenges in Nepal. How does reducing post-harvest losses complement production increments to achieve the targets of the 16th Periodic Plan and ADS? Illustrate with a descriptive technical diagram. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -790,7 +805,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please enter a question.")
         else:
-            with st.spinner("Preparing answer with circular diagrams and target-driven conclusion..."):
+            with st.spinner("Preparing answer with descriptive diagram and 3-pillar conclusion..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
@@ -818,7 +833,7 @@ with tab2:
             st.download_button(label="📥 Full Answer PDF", data=pdf_data, file_name="loksewa_model_answer.pdf", mime="application/pdf", use_container_width=True)
         with col_pdf2:
             single_diag_pdf = generate_diagrams_only_pdf_bytes([{"question": st.session_state["single_q"], "answer": st.session_state["single_ans"]}])
-            st.download_button(label="🖼️ Diagrams-Only PDF", data=single_diag_pdf, file_name="circular_diagram_cheat_sheet.pdf", mime="application/pdf", type="primary", use_container_width=True)
+            st.download_button(label="🖼️ Diagrams-Only PDF", data=single_diag_pdf, file_name="descriptive_diagram_cheat_sheet.pdf", mime="application/pdf", type="primary", use_container_width=True)
                 
         render_loksewa_content(st.session_state["single_ans"])
 
@@ -848,7 +863,7 @@ with tab3:
             st.download_button(
                 label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(notes)} Q&A)",
                 data=all_diags_pdf,
-                file_name="circular_diagrams_revision_booklet.pdf",
+                file_name="descriptive_diagrams_revision_booklet.pdf",
                 mime="application/pdf",
                 type="primary",
                 use_container_width=True
