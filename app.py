@@ -29,12 +29,12 @@ TRIPLE_BACKTICKS = chr(96) * 3
 # PAGE CONFIGURATION & IN-MEMORY (AUTO-ERASE) STATE
 # -------------------------------------------------------------
 st.set_page_config(
-    page_title="Lok Sewa Agri Officer Visual Coach",
+    page_title="Lok Sewa Agri Officer Dynamic Coach",
     page_icon="🌾",
     layout="wide"
 )
 
-# SESSION-ONLY STORAGE: Automatically erased when browser window closes
+# Pure in-memory session: Automatically wiped clean when the browser window closes
 if "saved_notes" not in st.session_state:
     st.session_state["saved_notes"] = []
 
@@ -66,7 +66,7 @@ def setup_pdf_font():
 setup_pdf_font()
 
 def clean_pdf_text(raw_text: str) -> str:
-    """Cleans characters to prevent '???' artifacts in ReportLab."""
+    """Cleans Unicode characters to avoid '???' artifacts in ReportLab."""
     if not raw_text:
         return ""
     text = raw_text
@@ -115,7 +115,7 @@ class CleanNumberedCanvas(canvas.Canvas):
         
         self.setFont(PDF_FONT, 8)
         self.setFillColor(colors.HexColor('#555555'))
-        self.drawRightString(555, 810, "Nepal Agricultural Service | Gazetted 3rd Class")
+        self.drawRightString(555, 810, "Nepal Agricultural Service | Gazetted 3rd Class (Officer Level)")
         
         self.setStrokeColor(colors.HexColor('#1b5e20'))
         self.setLineWidth(1)
@@ -127,9 +127,21 @@ class CleanNumberedCanvas(canvas.Canvas):
         
         self.setFont(PDF_FONT, 7.5)
         self.setFillColor(colors.HexColor('#64748b'))
-        self.drawString(40, 28, "Descriptive Process Architecture & Target-Driven Policy Notes")
+        self.drawString(40, 28, "Dynamic Subject-Tailored Model Answers & Flowchart Revision Notes")
         self.drawRightString(555, 28, f"Page {self._pageNumber} of {page_count}")
         self.restoreState()
+
+# -------------------------------------------------------------
+# MERMAID CODE SANITIZER (PREVENTS PARSER CRASHES)
+# -------------------------------------------------------------
+def sanitize_mermaid_code(code: str) -> str:
+    """Sanitizes syntax to guarantee error-free rendering in Mermaid.js & ReportLab."""
+    clean = code.strip()
+    clean = re.sub(r'^(graph|flowchart)\s+(TD|TB|LR)', r'flowchart \2', clean, flags=re.IGNORECASE)
+    clean = clean.replace('&nbsp;', ' ').replace('&bull;', '').replace('•', '-')
+    clean = re.sub(r'&(?!amp;|lt;|gt;)', 'and', clean)
+    clean = clean.replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '')
+    return clean
 
 # -------------------------------------------------------------
 # NATIVE IMAGE FETCH HELPER
@@ -137,7 +149,7 @@ class CleanNumberedCanvas(canvas.Canvas):
 def fetch_mermaid_png_bytes(mermaid_code: str):
     """Fetches high-res PNG image bytes for diagram saving and PDF embedding."""
     try:
-        clean_code = mermaid_code.strip()
+        clean_code = sanitize_mermaid_code(mermaid_code)
         encoded = base64.b64encode(clean_code.encode("utf-8")).decode("ascii")
         url = f"https://mermaid.ink/img/{encoded}?bgColor=FFFFFF"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
@@ -162,6 +174,8 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
     bullet_style = ParagraphStyle(f'BL_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=8.2, leading=12, leftIndent=12, spaceAfter=2.5)
     story_text_style = ParagraphStyle(f'ST_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=8.2, leading=12.5, textColor=colors.HexColor('#78350f'))
     diag_row_style = ParagraphStyle(f'DR_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=7.8, leading=11, textColor=colors.HexColor('#14532d'))
+    tbl_hdr_style = ParagraphStyle(f'TH_{q_num}', parent=styles['Normal'], fontName=PDF_FONT_BOLD, fontSize=7.8, leading=10, textColor=colors.white, alignment=1)
+    tbl_cell_style = ParagraphStyle(f'TC_{q_num}', parent=styles['Normal'], fontName=PDF_FONT, fontSize=7.8, leading=10, textColor=colors.HexColor('#1f2937'))
 
     story = []
     q_prefix = f"QUESTION #{q_num:02d}" if q_num else "QUESTION"
@@ -181,6 +195,8 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
     lines = answer_markdown.split("\n")
     in_mermaid = False
     mermaid_lines = []
+    in_table = False
+    table_rows = []
 
     for raw_line in lines:
         line = raw_line.strip()
@@ -193,11 +209,10 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             continue
         elif in_mermaid and TRIPLE_BACKTICKS in line:
             in_mermaid = False
-            mermaid_code = "\n".join(mermaid_lines)
-            is_conclusion_flow = "graph lr" in mermaid_code.lower() or len(mermaid_lines) <= 6
-            diag_label = "CONCLUSION TARGET MICRO-FLOWCHART" if is_conclusion_flow else "DESCRIPTIVE PROCESS ARCHITECTURE"
+            mermaid_code = sanitize_mermaid_code("\n".join(mermaid_lines))
+            is_conclusion_flow = "flowchart lr" in mermaid_code.lower() or "graph lr" in mermaid_code.lower() or len(mermaid_lines) <= 6
+            diag_label = "CONCLUSION TARGET MICRO-FLOWCHART" if is_conclusion_flow else "TECHNICAL PROCESS / MECHANISM MODEL"
             
-            # Embed image in PDF
             png_bytes = fetch_mermaid_png_bytes(mermaid_code)
             if png_bytes:
                 try:
@@ -217,10 +232,9 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
                 except Exception:
                     pass
 
-            # Fallback text card
             diag_elements = [Paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DTF', fontName=PDF_FONT_BOLD, fontSize=8, textColor=colors.HexColor('#166534'), spaceAfter=3))]
             for m_line in mermaid_lines:
-                clean_l = m_line.replace("([", "").replace("])", "").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' - ').strip()
+                clean_l = m_line.replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' - ').strip()
                 if clean_l and not clean_l.lower().startswith(('graph', 'flowchart', 'subgraph', 'end', '%%')):
                     diag_elements.append(Paragraph(f"&bull;&nbsp;{clean_pdf_text(clean_l)}", diag_row_style))
             
@@ -236,6 +250,40 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
         elif in_mermaid:
             mermaid_lines.append(line)
             continue
+
+        if line.startswith("|") and line.endswith("|"):
+            cells = [c.strip() for c in line.split("|")[1:-1]]
+            if not cells or all(c == "" or set(c) <= set("-:") for c in cells):
+                continue
+            table_rows.append(cells)
+            in_table = True
+            continue
+        elif in_table:
+            if table_rows:
+                col_w = content_width / len(table_rows[0])
+                t_data = []
+                for r_idx, row in enumerate(table_rows):
+                    p_row = []
+                    for c_txt in row:
+                        if r_idx == 0:
+                            p_row.append(Paragraph(f"<b>{clean_pdf_text(c_txt)}</b>", tbl_hdr_style))
+                        else:
+                            p_row.append(Paragraph(clean_pdf_text(c_txt), tbl_cell_style))
+                    t_data.append(p_row)
+                    
+                table_obj = Table(t_data, colWidths=[col_w] * len(table_rows[0]))
+                table_obj.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1b5e20')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
+                    ('PADDING', (0, 0), (-1, -1), 3.5),
+                ]))
+                story.append(table_obj)
+                story.append(Spacer(1, 4))
+            table_rows = []
+            in_table = False
 
         if "memory story" in line.lower() or "mnemonic" in line.lower():
             story_card = Table([[Paragraph(clean_pdf_text(line), story_text_style)]], colWidths=[content_width])
@@ -265,7 +313,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
 # PDF BUILDER 2: DIAGRAMS-ONLY VISUAL REVISION BOOKLET
 # -------------------------------------------------------------
 def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
-    """Builds a PDF booklet containing ONLY questions, descriptive process diagrams, and micro-flowcharts."""
+    """Builds a PDF booklet containing ONLY questions, technical diagrams, and micro-flowcharts."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=48, bottomMargin=48)
     styles = getSampleStyleSheet()
@@ -274,8 +322,8 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
 
     title_style = ParagraphStyle('DTitle', fontName=PDF_FONT_BOLD, fontSize=13.5, leading=17, textColor=colors.HexColor('#1b5e20'), alignment=1)
     sub_style = ParagraphStyle('DSub', fontName=PDF_FONT, fontSize=8.5, leading=12, textColor=colors.HexColor('#475569'), alignment=1)
-    story.append(Paragraph("<b>LOK SEWA AGRI OFFICER - DESCRIPTIVE DIAGRAM CHEAT SHEET</b>", title_style))
-    story.append(Paragraph("High-Impact Descriptive Technical Models & Target-Linked Conclusion Micro-Flows", sub_style))
+    story.append(Paragraph("<b>LOK SEWA AGRI OFFICER - TECHNICAL DIAGRAM CHEAT SHEET</b>", title_style))
+    story.append(Paragraph("Context-Specific Process Models & Target-Linked Conclusion Micro-Flows", sub_style))
     story.append(Spacer(1, 10))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#1b5e20'), spaceBefore=2, spaceAfter=12))
 
@@ -300,9 +348,10 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
             story.append(Paragraph("<i>No visual diagram was attached for this item.</i>", ParagraphStyle('ND', fontName=PDF_FONT, fontSize=8, textColor=colors.gray)))
             story.append(Spacer(1, 10))
         else:
-            for d_idx, m_code in enumerate(mermaid_blocks):
-                is_conclusion = "graph lr" in m_code.lower() or len(m_code.strip().split('\n')) <= 6
-                label = "🎯 Conclusion Micro-Flowchart (Quick Exam Recall)" if is_conclusion else f"🌾 Diagram {d_idx+1}: Descriptive Technical Architecture (Examiner-Impression Model)"
+            for d_idx, raw_code in enumerate(mermaid_blocks):
+                m_code = sanitize_mermaid_code(raw_code)
+                is_conclusion = "flowchart lr" in m_code.lower() or "graph lr" in m_code.lower() or len(m_code.strip().split('\n')) <= 6
+                label = "🎯 Conclusion Micro-Flowchart (Quick Recall)" if is_conclusion else f"🌾 Diagram {d_idx+1}: Topic Process Architecture"
                 
                 story.append(Paragraph(f"<b>{label}</b>", ParagraphStyle('DH', fontName=PDF_FONT_BOLD, fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4)))
                 
@@ -324,10 +373,9 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
                     except Exception:
                         pass
 
-                # Fallback text card
                 steps_data = []
                 for line in m_code.strip().split('\n'):
-                    clean_l = line.replace("([", "").replace("])", "").replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' - ').strip()
+                    clean_l = line.replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' - ').strip()
                     if clean_l and not clean_l.lower().startswith(('graph', 'flowchart', 'subgraph', 'end')):
                         steps_data.append(Paragraph(f"&bull;&nbsp;{clean_pdf_text(clean_l)}", ParagraphStyle('FST', fontName=PDF_FONT, fontSize=8, leading=11)))
                 
@@ -369,54 +417,40 @@ def generate_bulk_pdf_bytes(qa_list: list) -> bytes:
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT (EXAMINER-IMPRESSIVE DIAGRAM + 3-PILLAR CONCLUSION)
+# ZERO-PREMADE-DATA LOK SEWA SYSTEM PROMPT
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
-    "You are an elite Nepal Lok Sewa Aayog Chief Evaluator and Mentor for the Nepal Agricultural Service "
-    "(Gazetted 3rd Class / रा.प. तृतीय श्रेणी: Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
-    "CRITICAL DIRECTIVE 1: FIRST MERMAID DIAGRAM MUST BE HIGHLY DESCRIPTIVE & EXAMINER-IMPRESSIVE:\n"
-    "1. The checker must look at the first diagram and immediately recognize technical officer-level depth.\n"
-    "2. Structure it as a closed-loop circular or multi-tiered process (4 to 5 connected stages).\n"
-    "3. EACH NODE MUST BE RICH & DESCRIPTIVE (NOT single words). Inside each stadium node `([ ... ])`, include:\n"
-    "   * Bold Stage Title\n"
-    "   * 2 specific, technical interventions/parameters separated by `<br/>• ` (e.g., specific chemical names, biological control agents, NARC varieties, temperatures, soil pH ranges, ETL thresholds, or equipment).\n"
-    "   * Example Syntax:\n"
-    "     A([\"<b>Stage 1: Input & Seed Precision</b><br/>• SQCC Certified Seed / Seed Priming<br/>• Agri-lime for pH 6.0-6.5 & FYM\"]) --> B([\"<b>Stage 2: Integrated Field Care</b><br/>• Micro-irrigation & Leaf Color Chart<br/>• Customized Split NPK & Bio-fertilizer\"])\n"
-    "     B --> C([\"<b>Stage 3: Eco-Friendly Protection</b><br/>• ETL-based Bio-IPM Monitoring<br/>• Trichoderma & Pheromone Traps\"])\n"
-    "     C --> D([\"<b>Stage 4: Post-Harvest & Cold Chain</b><br/>• Zero Energy Cool Chamber / Grading<br/>• Hermetic Storage & Moisture Control\"])\n"
-    "     D --> E([\"<b>Stage 5: Market & Traceability</b><br/>• AKC-Cooperative Contract Linkage<br/>• Food Hygiene Act 2081 QR Labeling\"])\n"
-    "     E -->|\"Resource Reinvestment & Nutrient Cycle\"| A\n"
-    "4. Always wrap all node text in double quotes.\n\n"
-    "CRITICAL DIRECTIVE 2: 3-PILLAR STRATEGIC CONCLUSION (DUAL STRATEGY + SOLUTION + SPECIFIC TARGETS):\n"
-    "The conclusion MUST be structured into these 3 rigorous pillars:\n"
-    "1. PILLAR 1: DUAL STRATEGY PERSPECTIVE:\n"
-    "   * Highlight that production intensification alone is futile if 20-35% of harvested produce is lost before reaching consumers. Dual focus on sustainable production + aggressive post-harvest loss reduction is the only economically viable path.\n"
-    "2. PILLAR 2: CONCRETE OPERATIONAL SOLUTION:\n"
-    "   * Provide specific, field-level solutions (e.g. cluster-level Zero Energy Cool Chambers, decentralized solar cold rooms, hermetic grain storage bags, farmer cooperative contract farming under National Agri Policy 2081).\n"
-    "3. PILLAR 3: LINKAGE WITH SPECIFIC GOVERNMENT TARGETS:\n"
-    "   * Quantify exact national targets from official documents:\n"
-    "     - 16th Periodic Plan (2081/82-2085/86): Real AGDP growth of 5.0%+, multidimensional poverty reduction below 12%, staple cereal self-sufficiency.\n"
-    "     - ADS (2015-2035): Slashing post-harvest losses from 25-35% down to <15%; expanding commercialization from 10% to >50%.\n"
-    "     - National Seed Vision: Achieving 25-33% Seed Replacement Rate (SRR).\n"
-    "     - SDG 2 (Zero Hunger) & Food Hygiene Act 2081: Child stunting reduction below 15% and 100% farm-to-fork food safety.\n"
-    "4. CONCLUSION MICRO-FLOWCHART:\n"
-    "   * End with an EXACTLY 3-to-4 node horizontal flowchart (`graph LR`) connecting: `[Dual Strategy Focus] --> [Practical Operational Solution] --> [Achieving Specific Target]` for a 15-second exam sketch.\n\n"
-    "SECTION 2 STRICT DOMAIN SPECIFICITY:\n"
-    "- Provide ONLY 3-4 metrics specific to the question domain (Soils: ~52% acidity, ~45% low SOM; Protection: 27 banned active ingredients, 396g a.i./ha; Horticulture: 25-35% post-harvest loss, ~2.5L MT cold storage; Agronomy: Paddy 5.72M MT at 3.98-4.14 MT/ha; Extension: 1:1,500 ratio, 51 AKCs). No generic GDP copy-paste.\n\n"
-    "STANDARD ANSWER ARCHITECTURE:\n"
-    "1. Concise Introduction (2-3 sentences)\n"
-    "2. Current Scenario & Sectoral Data Snapshot (Context-specific indicators ONLY)\n"
-    "3. First Mermaid Diagram: Descriptive, Checker-Impressive Circular Technical Architecture (Stadium nodes with bulleted technical metrics)\n"
-    "4. Policy, Legal & Institutional Linkages (16th Plan, Food Hygiene Act 2081, etc.)\n"
-    "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
-    "6. Key Operational Challenges (4-5 points)\n"
-    "7. Actionable Way Forward (Three-tier federal roles: Federal, Provincial, Local)\n"
-    "8. Story-Based Mnemonic for Rapid Recall (English micro-story)\n"
-    "9. Strategic Conclusion (3-Pillar structure: Dual Strategy -> Concrete Solution -> Quantified Target Linkage + Conclusion Micro-Flowchart `graph LR`)"
+    "You are an elite, highly rigorous Nepal Public Service Commission (Lok Sewa Aayog) Senior Evaluator for the "
+    "Nepal Agricultural Service (Gazetted Third Class / रा.प. तृतीय श्रेणी: Agronomy, Horticulture, Plant Protection, "
+    "Soil Science, Agri Extension, and Agricultural Economics).\n\n"
+    "STRICT DIRECTIVE: ZERO PRE-MADE DATA & ZERO COOKIE-CUTTER TEMPLATES:\n"
+    "1. Under NO circumstances should you repeat a fixed table of macroeconomic or generic indicators (like GDP, national grain totals, or pesticide counts) unless the question explicitly asks for them.\n"
+    "2. Every answer must be built from the ground up, tailored 100% to the question's specific discipline, command terms (e.g., Explain, Critically Evaluate, Differentiate, Describe, Formulate), and marks weightage.\n"
+    "3. All empirical figures, technical dosages, economic thresholds (ETL), incubation periods, CCE values, chemical active ingredients, NARC varietal names, or legal Acts cited MUST be directly relevant to that specific subject matter.\n\n"
+    "DYNAMIC SUBJECT-MATTER RULES:\n"
+    "- If Plant Pathology / Entomology: Focus strictly on etiology, taxonomy, symptoms, infection/life cycle, ETLs, and precise cultural, biological, and chemical IPM dosages (e.g., ml/L, g/L, or kg/ha). Diagram must be an Infection Cycle or IPM Decision Tree.\n"
+    "- If Agronomy / Seed Science: Focus on agro-ecology, certified seed classes, varietal release mechanisms (SQCC), land preparation, sowing geometry, nutrient splitting, and Seed Replacement Rate (SRR). Diagram must be a Cultivation SOP or Seed Multiplication Loop.\n"
+    "- If Soil Science: Focus on soil chemical/physical properties, acidity correction dynamics, CCE calculation, nutrient interactions, Soil Health Card diagnostics, and fertilizer efficiency. Diagram must be a Nutrient Transformation or Liming Cycle.\n"
+    "- If Horticulture / Post-Harvest: Focus on rootstocks, canopy architecture, chilling requirements, maturity indices, sorting, cold-chain preservation, and shelf-life extension. Diagram must be a Value Addition or Post-Harvest Handling Process.\n"
+    "- If Agricultural Extension & Policy: Focus on constitutional allocations (Schedules 5 to 9), institutional interfaces (Federal DoA, Provincial AKC, Local 753 units), technology adoption models, and federal coordination. Diagram must be an Institutional Service Delivery Architecture.\n\n"
+    "MERMAID SYNTAX RULES (GUARANTEED ERROR-FREE):\n"
+    "- Always start the process diagram with `flowchart TD`.\n"
+    "- Use standard rectangular nodes: A[\"Stage Title<br/>- Technical detail 1<br/>- Technical detail 2\"].\n"
+    "- Do NOT use round brackets (), HTML tags like <b>, bullets like •, or raw ampersands & inside node text. Use 'and'.\n"
+    "- The diagram must clearly portray the core technical mechanism of the question.\n\n"
+    "STRICTLY CONTEXTUAL CONCLUSION:\n"
+    "- Frame a contextual strategic vision directly answering the question's core problem.\n"
+    "- Propose an actionable, field-level solution viable under Nepal's federal reality.\n"
+    "- Conclude by linking directly to the specific official target governing that topic (e.g., 16th Plan target, ADS 2015-2035 target, National Seed Vision target, Food Hygiene Act 2081, or SDG-2).\n"
+    "- Finish with an EXACTLY 3-to-4 node horizontal flowchart (`flowchart LR`) showing: `[Strategic Concept] --> [Field Action] --> [Target Realized]`.\n\n"
+    "TIME & MARKS CALIBRATION:\n"
+    "- 5 Marks: ~180-250 words, concise, focused, 1 short diagram.\n"
+    "- 10 Marks: ~450-650 words, comprehensive, technical core, main diagram + conclusion micro-flowchart.\n"
+    "- 15 Marks: ~750-950 words, in-depth analytical evaluation, multi-tier operational details."
 )
 
 # -------------------------------------------------------------
-# RESPONSIVE CONTENT RENDERER WITH DESCRIPTIVE DIAGRAM VIEWER
+# RESPONSIVE CONTENT RENDERER WITH FAILSAFE JS ENGINE
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
@@ -426,13 +460,14 @@ def render_loksewa_content(content_text: str):
     for part in parts:
         if part.startswith(f"{TRIPLE_BACKTICKS}mermaid"):
             diagram_count += 1
-            mermaid_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
+            raw_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
+            mermaid_code = sanitize_mermaid_code(raw_code)
             line_count = len(mermaid_code.strip().split('\n'))
             dyn_height = min(720, max(260, line_count * 42 + 110))
             container_id = f"mermaid_box_{diagram_count}_{int(time.time()*100)%10000}"
             
-            is_micro = "graph lr" in mermaid_code.lower() or line_count <= 6
-            card_title = "🎯 3-Pillar Conclusion Micro-Flowchart (Quick Recall)" if is_micro else "🌾 Descriptive Technical Process Architecture (Examiner-Impression Model)"
+            is_micro = "flowchart lr" in mermaid_code.lower() or "graph lr" in mermaid_code.lower() or line_count <= 6
+            card_title = "🎯 Conclusion Micro-Flowchart (Quick Exam Recall)" if is_micro else "🌾 Question-Specific Technical Process Architecture"
             
             html_code = f"""
             <!DOCTYPE html>
@@ -463,6 +498,7 @@ def render_loksewa_content(content_text: str):
                         background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; overflow-x: auto;
                     }}
                     .mermaid svg {{ max-width: 100% !important; height: auto !important; }}
+                    .error-fallback {{ color: #b91c1c; font-size: 12px; font-family: monospace; white-space: pre-wrap; }}
                 </style>
             </head>
             <body>
@@ -472,7 +508,7 @@ def render_loksewa_content(content_text: str):
                         <button class="action-btn" onclick="openDiagramWindow()">🔍 Open in New Tab</button>
                     </div>
                     <div class="diagram-viewport">
-                        <pre class="mermaid">
+                        <pre class="mermaid" id="diag_{container_id}">
 {mermaid_code}
                         </pre>
                     </div>
@@ -481,7 +517,7 @@ def render_loksewa_content(content_text: str):
                 <script type="module">
                     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
                     mermaid.initialize({{
-                        startOnLoad: true,
+                        startOnLoad: false,
                         theme: 'neutral',
                         securityLevel: 'loose',
                         themeVariables: {{
@@ -493,6 +529,14 @@ def render_loksewa_content(content_text: str):
                         }},
                         flowchart: {{ useMaxWidth: false, htmlLabels: true, curve: 'basis' }}
                     }});
+                    try {{
+                        await mermaid.run();
+                    }} catch (e) {{
+                        const el = document.getElementById('diag_{container_id}');
+                        if (el) {{
+                            el.innerHTML = '<div class="error-fallback"><b>[Flowchart Process Flow]:</b><br/>' + el.innerText.replace(/-->/g, ' ➔ ').replace(/flowchart (TD|LR)/g, '') + '</div>';
+                        }}
+                    }}
                 </script>
 
                 <script>
@@ -514,7 +558,7 @@ def render_loksewa_content(content_text: str):
                             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                             URL.revokeObjectURL(url);
                             const w = window.open("");
-                            w.document.write('<title>Descriptive Diagram</title><body style="margin:0;display:flex;justify-content:center;background:#f8fafc;"><img src="' + canvas.toDataURL() + '" style="max-width:100%;height:auto;margin:20px;box-shadow:0 4px 12px rgba(0,0,0,0.09);border-radius:8px;"/></body>');
+                            w.document.write('<title>Technical Diagram</title><body style="margin:0;display:flex;justify-content:center;background:#f8fafc;"><img src="' + canvas.toDataURL() + '" style="max-width:100%;height:auto;margin:20px;box-shadow:0 4px 12px rgba(0,0,0,0.09);border-radius:8px;"/></body>');
                         }};
                         img.src = url;
                     }}
@@ -532,7 +576,7 @@ def render_loksewa_content(content_text: str):
                     st.download_button(
                         label=f"📸 Save Diagram #{diagram_count} as PNG",
                         data=png_bytes,
-                        file_name=f"descriptive_diagram_{diagram_count}_{int(time.time())}.png",
+                        file_name=f"technical_diagram_{diagram_count}_{int(time.time())}.png",
                         mime="image/png",
                         key=f"native_png_{diagram_count}_{int(time.time()*1000)%10000}"
                     )
@@ -540,7 +584,7 @@ def render_loksewa_content(content_text: str):
                     st.download_button(
                         label=f"💾 Save Diagram #{diagram_count} (.mmd)",
                         data=mermaid_code,
-                        file_name=f"descriptive_diagram_{diagram_count}.mmd",
+                        file_name=f"technical_diagram_{diagram_count}.mmd",
                         mime="text/plain",
                         key=f"native_mmd_{diagram_count}_{int(time.time()*1000)%10000}"
                     )
@@ -598,35 +642,31 @@ def extract_questions_from_image(client, image: Image.Image, vision_model: str):
 
 def generate_loksewa_answer(client, question_text: str, marks: int, text_model: str, retries: int = 2):
     user_prompt = f"""
-    Produce an elite, high-scoring Nepal Lok Sewa examination model answer for:
+    Write a high-scoring Nepal Lok Sewa examination model answer for:
     
     QUESTION: {question_text}
     MARKS ALLOTTED: {marks} Marks
     
-    MANDATORY CRITICAL DIRECTIVES:
-    1. Concise Introduction: 2-3 sentences.
-    2. Section 2 (Data Snapshot): 3-4 CONTEXTUAL metrics strictly belonging to this question's domain (no generic GDP copy-paste).
-    3. First Mermaid Diagram (EXAMINER-IMPRESSIVE & DESCRIPTIVE):
-       - Build a closed-loop or multi-tiered technical architecture (4 to 5 stages).
-       - Make each node richly descriptive: inside stadium `(["..."])`, provide bold title AND 2-3 specific technical interventions/metrics separated by `<br/>• ` (e.g., specific chemical names, biological control agents, NARC varieties, temperatures, soil pH ranges, ETL thresholds, or equipment).
-       - Impress the examiner at first glance with subject-matter mastery.
-    4. Policy Linkage: 16th Plan, Food Hygiene Act 2081, Pesticides Regulation 2081, etc.
-    5. Main Analytical Core: 5-7 punchy points (Heading -> Cause/Effect -> Practical Implication).
-    6. Operational Challenges: 4-5 field-level bottlenecks.
-    7. Actionable Way Forward: Three-tier federal role allocation.
-    8. Rapid Recall Mnemonic: 1-2 sentence real-world micro-story in English.
-    9. Strategic Conclusion (STRICT 3-PILLAR FORMULA):
-       - Pillar 1 (Dual Strategy): Address both production increase AND post-harvest loss reduction (mitigating 20-35% loss).
-       - Pillar 2 (Concrete Solution): Field-level solutions (cool chambers, hermetic storage, cooperative aggregation, contract farming under National Agri Policy 2081).
-       - Pillar 3 (Link to Quantified Targets): Citing exact figures from 16th Plan (5% AGDP growth, poverty <12%), ADS (post-harvest loss <15%, commercialization >50%), National Seed Vision (25-33% SRR), or SDG 2.
-       - End with an EXACTLY 3-4 node horizontal flowchart (`graph LR`): `[Dual Strategy Focus] --> [Practical Field Solution] --> [Policy Target Attained]`.
+    DYNAMIC INSTRUCTIONS (ZERO PRE-MADE FILLER DATA):
+    1. Tailor the entire answer architecture, headings, and technical depth strictly to this specific question.
+    2. Data Snapshot: Do NOT include generic national GDP or general cereal lists unless the question asks for it. Provide ONLY 3 to 4 technical parameters, chemical dosages, threshold metrics, or specific empirical data directly relevant to this exact subject.
+    3. Authentic Legal & Institutional Context: Cite the exact parent Acts, Regulations, and public agencies (e.g., MoALD, NARC, DoA, PQPMC, SQCC, DFTQC, Local Governments) governing this topic.
+    4. Technical Diagram: Design an authentic process model, life cycle, decision key, or institutional flow strictly matching this topic. Start with `flowchart TD`, use rectangular nodes: A["Stage Title<br/>- Detail 1<br/>- Detail 2"], and do NOT use unescaped brackets or symbols.
+    5. Main Analytical Core: Provide sharp, officer-grade technical points with headings, cause-and-effect explanations, and field-level applications in Nepal.
+    6. Operational Challenges & Actionable Way Forward: Specific to this topic's reality under Nepal's federal structure.
+    7. Rapid Recall Mnemonic: A 1-2 sentence real-world narrative micro-story in English connecting the analytical core.
+    8. Strategic Conclusion:
+       - Contextual Strategy addressing the question directly.
+       - Practical field solution viable in Nepal.
+       - Explicit linkage to the official target governing this topic (16th Plan, ADS, Seed Vision, Food Hygiene Act 2081, or SDG-2).
+       - End with an EXACTLY 3-4 node horizontal flowchart (`flowchart LR`): `[Topic Strategy] --> [Actionable Solution] --> [Policy Target Attained]`.
     """
     for attempt in range(retries + 1):
         try:
             response = client.chat.completions.create(
                 model=text_model,
                 messages=[{"role": "system", "content": LOKSEWA_SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}],
-                temperature=0.2,
+                temperature=0.25,
                 max_tokens=3200,
             )
             return response.choices[0].message.content
@@ -651,18 +691,19 @@ st.sidebar.markdown(f"### 📚 Active Session Bank: **{saved_count}** Notes")
 st.sidebar.caption("🔒 Session-Only Memory: Data automatically erases when you close this browser tab.")
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "**Core Evaluation Architecture:**\n"
-    "• Descriptive Technical First Diagram (Impression Model)\n"
-    "• 3-Pillar Conclusion (Dual Strategy -> Solution -> Targets)\n"
-    "• Quantified 16th Plan & ADS Metrics\n"
+    "**Dynamic Evaluation Engine:**\n"
+    "• Zero Hardcoded / Pre-made Filler Data\n"
+    "• Discipline-Specific Technical Models\n"
+    "• Syntax-Safe Mermaid Flowcharts\n"
+    "• Question-Linked Policy Targets\n"
     "• Diagrams-Only Visual Revision PDF"
 )
 
 # -------------------------------------------------------------
 # MAIN APP BODY
 # -------------------------------------------------------------
-st.title("🌾 Lok Sewa Agri Officer Visual Coach")
-st.caption("Descriptive Examiner-Grade Diagrams | 3-Pillar Target-Driven Conclusions | Diagrams-Only PDF Booklet")
+st.title("🌾 Lok Sewa Agri Officer Dynamic Coach")
+st.caption("Zero-Template Adaptive Engine | Topic-Specific Technical Diagrams | Direct Policy Linkages | Diagrams-Only PDF Booklet")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -713,8 +754,8 @@ with tab1:
             with col_m:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
-            if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Generating descriptive diagram, domain metrics, and 3-pillar conclusion..."):
+            if st.button("🚀 Generate Dynamic Answer", type="primary"):
+                with st.spinner("Evaluating question domain and generating custom answer..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -775,7 +816,7 @@ with tab1:
                     st.download_button(label=f"📥 Download Full Q&A PDF ({len(bulk_data)})", data=bulk_pdf_bytes, file_name="all_model_answers.pdf", mime="application/pdf", use_container_width=True)
                 with col_b2:
                     diag_only_pdf = generate_diagrams_only_pdf_bytes(bulk_data)
-                    st.download_button(label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(bulk_data)})", data=diag_only_pdf, file_name="descriptive_diagrams_only.pdf", mime="application/pdf", type="primary", use_container_width=True)
+                    st.download_button(label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(bulk_data)})", data=diag_only_pdf, file_name="technical_diagrams_only.pdf", mime="application/pdf", type="primary", use_container_width=True)
                 with col_b3:
                     if st.button("⭐ Save ALL to Active Session", use_container_width=True):
                         for b_item in bulk_data:
@@ -794,18 +835,18 @@ with tab2:
     st.subheader("Type or Paste Exam Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Analyze the food security challenges in Nepal. How does reducing post-harvest losses complement production increments to achieve the targets of the 16th Periodic Plan and ADS? Illustrate with a descriptive technical diagram. [10 marks]",
+        placeholder="e.g., Explain the role of Soil Health Cards in correcting soil acidity and nutrient imbalance in Nepal. Suggest field solutions and link them to national targets. [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
     with col1:
         s_marks = st.selectbox("Marks Weightage:", [5, 10, 15], index=1, key="tab2_marks")
         
-    if st.button("🚀 Generate Answer", type="primary", key="btn_single"):
+    if st.button("🚀 Generate Dynamic Answer", type="primary", key="btn_single"):
         if not single_q.strip():
             st.warning("Please enter a question.")
         else:
-            with st.spinner("Preparing answer with descriptive diagram and 3-pillar conclusion..."):
+            with st.spinner("Analyzing question domain and crafting custom model answer..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
@@ -833,7 +874,7 @@ with tab2:
             st.download_button(label="📥 Full Answer PDF", data=pdf_data, file_name="loksewa_model_answer.pdf", mime="application/pdf", use_container_width=True)
         with col_pdf2:
             single_diag_pdf = generate_diagrams_only_pdf_bytes([{"question": st.session_state["single_q"], "answer": st.session_state["single_ans"]}])
-            st.download_button(label="🖼️ Diagrams-Only PDF", data=single_diag_pdf, file_name="descriptive_diagram_cheat_sheet.pdf", mime="application/pdf", type="primary", use_container_width=True)
+            st.download_button(label="🖼️ Diagrams-Only PDF", data=single_diag_pdf, file_name="technical_diagram_cheat_sheet.pdf", mime="application/pdf", type="primary", use_container_width=True)
                 
         render_loksewa_content(st.session_state["single_ans"])
 
@@ -863,7 +904,7 @@ with tab3:
             st.download_button(
                 label=f"🖼️ Download DIAGRAMS-ONLY PDF ({len(notes)} Q&A)",
                 data=all_diags_pdf,
-                file_name="descriptive_diagrams_revision_booklet.pdf",
+                file_name="technical_diagrams_revision_booklet.pdf",
                 mime="application/pdf",
                 type="primary",
                 use_container_width=True
