@@ -6,6 +6,8 @@ import json
 import re
 import html
 import time
+import urllib.request
+import urllib.parse
 from datetime import datetime
 from groq import Groq
 from PIL import Image
@@ -22,7 +24,6 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-# Constant for triple backticks to avoid markdown parsing collisions
 TRIPLE_BACKTICKS = chr(96) * 3
 
 # -------------------------------------------------------------
@@ -59,7 +60,6 @@ PDF_FONT = 'Helvetica'
 PDF_FONT_BOLD = 'Helvetica-Bold'
 
 def setup_pdf_font():
-    """Tries to register a system TrueType font if available on the OS."""
     global PDF_FONT, PDF_FONT_BOLD
     system_font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -81,7 +81,7 @@ def setup_pdf_font():
 setup_pdf_font()
 
 def clean_pdf_text(raw_text: str) -> str:
-    """Cleans Unicode punctuation, emojis, and symbols so they never turn into '???'."""
+    """Cleans Unicode characters to prevent '???' artifacts in ReportLab."""
     if not raw_text:
         return ""
     text = raw_text
@@ -90,7 +90,7 @@ def clean_pdf_text(raw_text: str) -> str:
     text = text.replace('→', ' -> ').replace('←', ' <- ').replace('↑', ' (up) ').replace('↓', ' (down) ')
     text = text.replace('≥', '>=').replace('≤', '<=').replace('≠', '!=').replace('≈', '~')
     text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
-    text = re.sub(r'[📖🌾📌📝⭐🚀🔍📋📚🎉&bull;•🔄🌳]', '', text)
+    text = re.sub(r'[📖🌾📌📝⭐🚀🔍📋📚🎉&bull;•🔄🌳🎯💡🔬🧪]', '', text)
     text = text.replace('\u00a0', ' ').replace('\u200b', '')
 
     escaped = html.escape(text)
@@ -142,12 +142,12 @@ class CleanNumberedCanvas(canvas.Canvas):
         
         self.setFont(PDF_FONT, 7.5)
         self.setFillColor(colors.HexColor('#64748b'))
-        self.drawString(40, 28, "MoALD / Economic Survey / NARC Baseline Verified Answers")
+        self.drawString(40, 28, "Context-Specific MoALD / NARC / PQPMC Verified Technical Notes")
         self.drawRightString(555, 28, f"Page {self._pageNumber} of {page_count}")
         self.restoreState()
 
 # -------------------------------------------------------------
-# PDF BUILDER SUPPORTING BOTH LINEAR & CYCLIC/BRANCHING FLOWS
+# PDF BUILDER SUPPORTING CONTEXTUAL TABLES & MICRO-FLOWCHARTS
 # -------------------------------------------------------------
 def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
     styles = getSampleStyleSheet()
@@ -219,14 +219,28 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             continue
         elif in_mermaid and TRIPLE_BACKTICKS in line:
             in_mermaid = False
-            
-            # Detect model architecture: Cyclic, Hierarchical/Branching, or Linear
             mermaid_raw_str = " ".join(mermaid_lines).lower()
-            is_cyclic = any(kw in mermaid_raw_str for kw in ["cycle", "feedback", "recycle", "loop", "re-circulate"])
-            diag_label = "CYCLIC / CLOSED-LOOP MECHANISM" if is_cyclic else "SYSTEM PROCESS FLOW & ARCHITECTURE"
+            is_conclusion_flow = "graph lr" in mermaid_raw_str or len(mermaid_lines) <= 5
+            is_cyclic = any(kw in mermaid_raw_str for kw in ["cycle", "feedback", "recycle", "loop"])
+
+            if is_conclusion_flow:
+                diag_label = "EXAM-HALL CONCLUSION MICRO-FLOWCHART"
+                box_bg = '#fefce8'
+                box_border = '#fef08a'
+                title_col = '#854d0e'
+            elif is_cyclic:
+                diag_label = "CYCLIC / CLOSED-LOOP MODEL"
+                box_bg = '#f0fdf4'
+                box_border = '#bbf7d0'
+                title_col = '#166534'
+            else:
+                diag_label = "PROCESS FLOW & MECHANISM"
+                box_bg = '#f0fdf4'
+                box_border = '#bbf7d0'
+                title_col = '#166534'
 
             diag_elements = [
-                Paragraph(f"<b>DIAGRAMMATIC MODEL: {diag_label}</b>", ParagraphStyle('DTitle', fontName=PDF_FONT_BOLD, fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4))
+                Paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DTitle', fontName=PDF_FONT_BOLD, fontSize=8.2, textColor=colors.HexColor(title_col), spaceAfter=3))
             ]
             
             flow_connections = []
@@ -239,22 +253,25 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
                     if len(parts) >= 2:
                         src = parts[0].strip()
                         dest = parts[1].strip()
-                        flow_connections.append(f"&bull; <b>{src}</b> &rarr; {dest}")
+                        flow_connections.append(f"<b>{src}</b> &rarr; {dest}")
                 else:
-                    flow_connections.append(f"&bull; {clean_l}")
+                    flow_connections.append(clean_l)
 
-            for conn in flow_connections[:10]:
-                diag_elements.append(Paragraph(clean_pdf_text(conn), diag_row_style))
+            if is_conclusion_flow and flow_connections:
+                diag_elements.append(Paragraph(" &nbsp;&rarr;&nbsp; ".join([clean_pdf_text(c) for c in flow_connections]), diag_row_style))
+            else:
+                for conn in flow_connections[:8]:
+                    diag_elements.append(Paragraph(f"&bull;&nbsp;{clean_pdf_text(conn)}", diag_row_style))
 
             diag_card = Table([[diag_elements]], colWidths=[content_width])
             diag_card.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f0fdf4')),
-                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#bbf7d0')),
-                ('PADDING', (0, 0), (-1, -1), 6),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(box_bg)),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor(box_border)),
+                ('PADDING', (0, 0), (-1, -1), 5),
             ]))
             story.append(Spacer(1, 3))
             story.append(diag_card)
-            story.append(Spacer(1, 5))
+            story.append(Spacer(1, 4))
             continue
         elif in_mermaid:
             mermaid_lines.append(line)
@@ -290,7 +307,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
                     ('PADDING', (0, 0), (-1, -1), 3.5),
                 ]))
                 story.append(table_obj)
-                story.append(Spacer(1, 5))
+                story.append(Spacer(1, 4))
             table_rows = []
             in_table = False
 
@@ -310,7 +327,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             ]))
             story.append(Spacer(1, 3))
             story.append(story_card)
-            story.append(Spacer(1, 5))
+            story.append(Spacer(1, 4))
             continue
 
         if line.startswith("#"):
@@ -334,7 +351,6 @@ def generate_single_pdf_bytes(question: str, marks: int, answer_markdown: str) -
     return buffer.getvalue()
 
 def generate_bulk_pdf_bytes(qa_list: list) -> bytes:
-    """Generates bulk PDF containing strictly Question and Answers only."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=48, bottomMargin=48)
     story = []
@@ -355,78 +371,91 @@ def generate_bulk_pdf_bytes(qa_list: list) -> bytes:
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# LOK SEWA SYSTEM PROMPT - RIGOROUS NEPAL GOVT OFFICIAL BASELINE
+# FOOLPROOF NATIVE IMAGE DOWNLOAD HELPER
+# -------------------------------------------------------------
+def fetch_mermaid_png_bytes(mermaid_code: str):
+    """Fetches high-res PNG image bytes for the diagram so Streamlit can trigger native file downloads."""
+    try:
+        clean_code = mermaid_code.strip()
+        encoded = base64.b64encode(clean_code.encode("utf-8")).decode("ascii")
+        url = f"https://mermaid.ink/img/{encoded}?bgColor=FFFFFF"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            if resp.status == 200:
+                return resp.read()
+    except Exception:
+        pass
+    return None
+
+# -------------------------------------------------------------
+# DYNAMIC, DOMAIN-AWARE LOK SEWA SYSTEM PROMPT
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
-    "You are an elite Nepal Lok Sewa Aayog Senior Examiner and Answer-Writing Mentor for the Nepal Agricultural Service "
-    "(Gazetted 3rd Class / रा.प. तृतीय श्रेणी: Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
-    "CRITICAL MANDATE: Provide FEWER, PUNCHY, HIGH-IMPACT, ACCURATE points tailored to an intense 13-14 minute writing timeframe.\n\n"
-    "VERIFIED GOVERNMENT OF NEPAL OFFICIAL DATA BASELINE (Economic Survey 2080/81 & 2081/82, MoALD Statistical Report, PQPMC, SQCC, 16th Plan):\n"
-    "1. Macroeconomic Accounts (Ministry of Finance - MoF & National Statistics Office - NSO):\n"
-    "   * Agriculture, Forestry & Fisheries share in GDP: 24.1% - 25.16% at current prices.\n"
-    "   * Agriculture sector real growth rate: 3.05% - 3.28% (Constant prices).\n"
-    "   * National GDP Size: Rs. 57.05 Kharba (FY 2080/81 revised) / Rs. 61.07 - 61.7 Kharba (FY 2081/82).\n"
-    "   * Per Capita Gross National Income (GNI): USD 1,456 (2080/81) to USD 1,517 (2081/82).\n"
-    "   * National Employment in Agriculture: ~62.4% (Population Census 2021) / 66.7% (National Agriculture Census 2021/22).\n"
-    "2. MoALD / Krishi Diary Production & Yield Statistics:\n"
-    "   * Paddy (Rice): National harvest achieved a historic record of 5.724 Million MT (57.24 Lakh MT in FY 2080/81) across 1.438 Million ha; Average productivity 3.98 - 4.14 MT/ha (Koshi Province highest at 4.43 MT/ha; Madhesh at ~3.49-3.86 MT/ha).\n"
-    "   * Maize: ~3.15 Million MT (Yield ~3.21 MT/ha across ~980,000 ha).\n"
-    "   * Wheat: ~2.18 Million MT (Yield ~3.04 MT/ha across ~716,000 ha).\n"
-    "   * Total Cereal Output: ~11.2 - 11.5 Million MT.\n"
-    "   * Subsidized Chemical Fertilizer: ~4.25 Lakh MT distributed annually via KSCL & STC.\n"
-    "3. PQPMC (Plant Quarantine & Pesticide Management Centre) Official Gazette Records:\n"
-    "   * Exactly 27 active pesticide ingredients are currently BANNED in Nepal.\n"
-    "   * December 2024 Gazette Notification added: Paraquat dichloride, Chlorpyrifos, and Phorate to the banned list.\n"
-    "   * Average pesticide consumption: ~396 gm active ingredient (a.i.)/ha nationally, but exceeds 1.5 - 2.5 kg a.i./ha in commercial vegetable belts (Kavre, Dhading, Chitwan).\n"
-    "4. SQCC (Seed Quality Control Centre) & Seed Milestones:\n"
-    "   * 700+ registered/notified crop varieties.\n"
+    "You are an elite Nepal Lok Sewa Aayog Senior Evaluator for the Nepal Agricultural Service "
+    "(Gazetted 3rd Class - Agri Extension, Horticulture, Agronomy, Plant Protection, Soil Science).\n\n"
+    "STRICT DIRECTIVE ON SECTION 2 (CURRENT SCENARIO & SECTORAL DATA SNAPSHOT):\n"
+    "DO NOT EVER copy-paste a fixed generic macro table (e.g. GDP, GNI, Paddy, Banned Pesticides all lumped together).\n"
+    "Section 2 MUST BE 100% CONTEXTUAL to the specific question asked. Provide a concise table or bullet snapshot of ONLY 3-4 indicators directly relevant to that domain:\n\n"
+    "DOMAIN DATA REFERENCE GUIDE (Select ONLY the domain matching the question):\n"
+    "1. Soil Science & Plant Nutrition Questions:\n"
+    "   * Soil acidity status: ~52% of Nepalese agricultural soils are acidic (pH < 5.5).\n"
+    "   * Soil Organic Matter (SOM): ~45% soils deficient in SOM (<1.5% - 2.0%).\n"
+    "   * Available Nutrients: High Nitrogen & Phosphorus deficiency (~55-60%), balanced Potash.\n"
+    "   * Subsidized Chemical Fertilizer: ~4.25 Lakh MT distributed annually via KSCL & STC (against real agronomic demand of ~8.0-9.0 Lakh MT).\n"
+    "   * NPK ratio distortion: Highly distorted at ~4:1:0.5 compared to the ideal 4:2:1 ratio.\n"
+    "2. Plant Protection & Entomology / Pathology Questions:\n"
+    "   * Banned Active Ingredients: Exactly 27 active ingredients banned in Nepal (PQPMC Gazette Notification Dec 2024 added: Paraquat dichloride, Chlorpyrifos, Phorate).\n"
+    "   * Pesticide Consumption: National average ~396 gm a.i./ha, but heavily concentrated in commercial vegetable belts (Kavre, Dhading, Chitwan) up to 1.5 - 2.5 kg a.i./ha.\n"
+    "   * Crop Loss Estimates: Pre-harvest pest losses ~20-25%; Post-harvest losses ~15-20%.\n"
+    "   * Institutional Monitoring: Rapid Bioassay for Pesticide Residue (RBPR) units operational at border checkposts and major wholesale markets (Kalimati, Pokhara, etc.).\n"
+    "3. Horticulture & Post-Harvest Questions:\n"
+    "   * Post-Harvest Loss Rate: 25% - 35% in perishables (fruits & vegetables) due to cold-chain gaps.\n"
+    "   * National Cold Storage Capacity: ~2.5 - 3.0 Lakh MT (covering <15% of perishable output).\n"
+    "   * Trade Deficit in Fruits/Vegetables: Fresh fruit and vegetable imports exceed NPR 25+ Arba annually.\n"
+    "   * Productivity Metrics: Citrus ~9.8 MT/ha; Apple ~8.2 MT/ha; Vegetables ~14.2 MT/ha.\n"
+    "4. Agronomy & Seed Sector Questions:\n"
+    "   * Cereal Production: Paddy 5.724 Million MT (yield 3.98-4.14 MT/ha); Maize 3.15M MT (yield 3.21 MT/ha); Wheat 2.18M MT (yield 3.04 MT/ha).\n"
     "   * Seed Replacement Rate (SRR): Paddy ~24.5%, Wheat ~22.8%, Maize ~20.2% (Target: 25-33% under National Seed Vision).\n"
-    "5. Recent Legislative & Policy Frameworks:\n"
-    "   * 16th Periodic Plan (आर्थिक वर्ष २०८१/८२ - २०८५/८६): Theme 'Good Governance, Social Justice and Prosperity'; emphasizes agricultural commercialization corridors, land consolidation (चक्लाबन्दी), and climate-smart value chains.\n"
-    "   * Agriculture Investment Decade (कृषि लगानी दशक: २०८१-२०९१ / 2024-2034 AD).\n"
-    "   * Food Hygiene and Quality Act, 2081 (खाद्य स्वच्छता तथा गुणस्तर ऐन, २०८१) replacing Food Act 2023.\n"
-    "   * Pesticides Management Regulation, 2081 (जीवनाशक विषादी व्यवस्थापन नियमावली, २०८१) under Pesticides Management Act 2076.\n"
-    "   * National Agriculture Policy, 2081 (revised federalized execution).\n\n"
-    "TECHNICAL SPECIFICITY DIRECTIVE:\n"
-    "- NEVER copy-paste generic GDP figures for pure technical agronomy, entomology, plant pathology, or soil science questions.\n"
-    "- For technical topics, cite genuine metrics: Economic Threshold Levels (ETL), degree days, chilling hours, TSS/Brix, seed certification tolerances, soil pH/SOM critical limits from NARC, DoA, or PQPMC.\n\n"
-    "MERMAID DIAGRAM INSTRUCTIONS - LINEAR, CYCLIC, BRANCHING & SWIMLANES:\n"
-    "1. DO NOT RESTRICT TO LINEAR FLOWS. Choose the diagram structure that truly represents the subject matter:\n"
-    "   * CYCLIC / CLOSED-LOOP: Use for nutrient cycles (N, P, K), disease/pest life cycles, IPM biological feedback loops, seed multiplication cycles (Breeder->Foundation->Certified->Improved), extension-farmer feedback cycles. Example syntax: A --> B --> C --> D -->|Recycle / Feedback| A.\n"
-    "   * BRANCHING / DECISION TREE: Use for IPM spray decisions, diagnostic keys, classification of horticultural crops, federal-provincial-local mandate distribution.\n"
-    "   * SWIMLANES / SUBGRAPHS: Group institutional roles: `subgraph NARC ... end`, `subgraph DoA/AKC ... end`, `subgraph Local Government ... end`.\n"
-    "   * LINEAR: For sequential processing steps, export quarantine protocols, cold chain transport.\n"
-    "2. Orientation: Use `graph TD` for top-down or `graph LR` where wide layout makes sense.\n"
-    "3. Keep node text concise (3-5 words) using `<br/>` for line breaks. Wrap ALL node texts in double quotes: A[\"Soil Sampling<br/>(Grid Method)\"].\n\n"
-    "STORY-BASED RAPID RECALL MNEMONIC (ENGLISH STORY ONLY):\n"
-    "- Provide a memorable 1-2 sentence narrative micro-story strictly in ENGLISH connecting all core analytical points in logical order.\n"
-    "- Example: 'Farmer **Hari** first tested his **Soil & Certified Seed** (Inputs), adopted **AKC Extension Advice** (Technical Knowledge), stored his harvest in a **Cold Chain Hub** (Post-Harvest Infrastructure), and secured a direct contract via the **Cooperatives Value Chain** (Market Linkage) to achieve **Double Net Profit** (Economic Outcome).'\n\n"
-    "STANDARD ANSWER ARCHITECTURE:\n"
-    "1. Concise Introduction (2-3 sentences)\n"
-    "2. Current Scenario & Domain-Specific Data Snapshot (Cite MoALD, NARC, PQPMC, SQCC, or Economic Survey)\n"
-    "3. Conceptual Diagram (Mermaid code block: Linear, Cyclic, Branching, or Swimlane)\n"
-    "4. Policy, Legal & Institutional Linkages (Cite 16th Plan, Food Hygiene Act 2081, Pesticides Reg 2081, etc.)\n"
-    "5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)\n"
-    "6. Key Operational Challenges (4-5 bullet points)\n"
-    "7. Actionable Way Forward (Three-tier federal distribution: Federal, Provincial, Local)\n"
-    "8. Story-Based Mnemonic for Rapid Recall (English micro-story)\n"
-    "9. Strategic Conclusion"
+    "   * Notified Varieties: Over 700+ notified/registered varieties under SQCC.\n"
+    "   * Irrigated Command Area: Only ~33% agricultural land has year-round reliable irrigation.\n"
+    "5. Agri Extension & Governance Questions:\n"
+    "   * Technician to Farmer Ratio: 1 technician serving ~1,500 to 2,000+ farm families.\n"
+    "   * Institutional Network: 51 Agriculture Knowledge Centres (AKC) across 7 Provinces; 753 Local Level Agriculture Sections.\n"
+    "   * Project Structure: PMAMP operational zones, superzones, blocks, and pocket clusters.\n"
+    "6. Macroeconomic, Agri Policy & Food Security Questions (ONLY if question asks about economy, budget, or 16th plan macro indicators):\n"
+    "   * AGDP share of GDP: 24.1% - 25.16% at current prices; Real Ag growth: 3.05% - 3.28%.\n"
+    "   * Total GDP: Rs. 57.05 - 61.07 Kharba; Per capita GNI: USD 1,456 - 1,517.\n"
+    "   * Agricultural labor force engagement: 62.4% (Census 2021) / 66.7% (Agri Census 2021/22).\n\n"
+    "MANDATORY ANSWER ARCHITECTURE:\n"
+    "1. Concise Introduction (2-3 sentences: technical definition, scope, operational significance)\n"
+    "2. Current Scenario & Sectoral Data Snapshot: 3-4 CONTEXTUAL metrics ONLY relevant to the topic (No macro copy-paste!)\n"
+    "3. Process / Conceptual Diagram: Mermaid code (Cyclic, Branching Decision Tree, Swimlane, or Stepwise). Wrap labels in double quotes.\n"
+    "4. Policy, Legal & Institutional Linkage: Citing 16th Periodic Plan 2081/82-2085/86, Food Hygiene & Quality Act 2081, Pesticides Regulation 2081, Agri Investment Decade 2081-2091, or relevant sectoral acts.\n"
+    "5. Main Analytical Core: 5-7 punchy points (Bold Heading -> Cause/Effect -> Practical Implication)\n"
+    "6. Key Operational Challenges: 4-5 crisp, field-level bottlenecks\n"
+    "7. Actionable Way Forward: Three-tier federal role allocation (Federal, Provincial, Local)\n"
+    "8. Story-Based Mnemonic for Rapid Recall: 1-2 sentence memorable narrative story strictly in ENGLISH connecting analytical points\n"
+    "9. Strategic Conclusion & Quick-Recall Micro-Flowchart: 1-2 conclusive sentences followed immediately by an EXACTLY 3-to-4 node horizontal Mermaid flowchart (`graph LR`) that can be memorized and drawn in 15 seconds in the exam hall."
 )
 
 # -------------------------------------------------------------
-# RESPONSIVE MERMAID RENDERER WITH 1-CLICK PNG/SVG EXPORT
+# RESPONSIVE CONTENT RENDERER WITH GUARANTEED IMAGE SAVING
 # -------------------------------------------------------------
 def render_loksewa_content(content_text: str):
-    """Renders markdown text and embeds an interactive Mermaid diagram with PNG/SVG image download tools."""
     mermaid_pattern = rf"({TRIPLE_BACKTICKS}mermaid[\s\S]*?{TRIPLE_BACKTICKS})"
     parts = re.split(mermaid_pattern, content_text)
     
-    for idx, part in enumerate(parts):
+    diagram_count = 0
+    for part in parts:
         if part.startswith(f"{TRIPLE_BACKTICKS}mermaid"):
+            diagram_count += 1
             mermaid_code = part.replace(f"{TRIPLE_BACKTICKS}mermaid", "").replace(TRIPLE_BACKTICKS, "").strip()
             line_count = len(mermaid_code.strip().split('\n'))
-            dyn_height = min(1100, max(360, line_count * 45 + 130))
-            container_id = f"mermaid_box_{idx}_{int(time.time()*1000)%10000}"
+            dyn_height = min(900, max(260, line_count * 40 + 100))
+            container_id = f"mermaid_box_{diagram_count}_{int(time.time()*100)%10000}"
+            
+            is_micro = "graph lr" in mermaid_code.lower() or line_count <= 6
+            card_title = "🎯 Quick-Recall Conclusion Micro-Flowchart" if is_micro else "🌾 Process & Conceptual Architecture"
             
             html_code = f"""
             <!DOCTYPE html>
@@ -435,63 +464,57 @@ def render_loksewa_content(content_text: str):
                 <style>
                     body {{
                         margin: 0;
-                        padding: 6px;
+                        padding: 4px;
                         background: transparent;
                         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     }}
                     .outer-container {{
                         background: #ffffff;
                         border: 1px solid #cbd5e1;
-                        border-radius: 10px;
-                        padding: 14px;
-                        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-                        max-width: 850px;
+                        border-radius: 8px;
+                        padding: 12px;
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+                        max-width: 820px;
                         margin: 0 auto;
                     }}
                     .toolbar {{
                         display: flex;
                         justify-content: space-between;
                         align-items: center;
-                        margin-bottom: 12px;
-                        padding-bottom: 8px;
+                        margin-bottom: 8px;
+                        padding-bottom: 6px;
                         border-bottom: 1px solid #f1f5f9;
                     }}
                     .title-tag {{
-                        font-size: 12px;
+                        font-size: 11.5px;
                         font-weight: 700;
                         color: #166534;
                         text-transform: uppercase;
-                        letter-spacing: 0.5px;
                     }}
                     .btn-group {{
                         display: flex;
-                        gap: 8px;
+                        gap: 6px;
                     }}
                     .action-btn {{
                         background: #f0fdf4;
                         color: #15803d;
                         border: 1px solid #bbf7d0;
-                        padding: 4px 10px;
-                        border-radius: 6px;
-                        font-size: 11.5px;
+                        padding: 3px 8px;
+                        border-radius: 5px;
+                        font-size: 11px;
                         font-weight: 600;
                         cursor: pointer;
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 4px;
-                        transition: all 0.2s ease;
                     }}
                     .action-btn:hover {{
                         background: #dcfce7;
-                        border-color: #86efac;
                     }}
                     .diagram-viewport {{
                         display: flex;
                         justify-content: center;
                         align-items: center;
                         background: #f8fafc;
-                        border-radius: 8px;
-                        padding: 16px;
+                        border-radius: 6px;
+                        padding: 10px;
                         overflow-x: auto;
                     }}
                     .mermaid svg {{
@@ -503,10 +526,9 @@ def render_loksewa_content(content_text: str):
             <body>
                 <div class="outer-container" id="{container_id}">
                     <div class="toolbar">
-                        <span class="title-tag">🌾 Diagrammatic Architecture (Cyclic / Branching / Flow)</span>
+                        <span class="title-tag">{card_title}</span>
                         <div class="btn-group">
-                            <button class="action-btn" onclick="saveAsImage('png')">📸 Save as PNG</button>
-                            <button class="action-btn" onclick="saveAsImage('svg')">💾 Save as SVG</button>
+                            <button class="action-btn" onclick="openDiagramWindow()">🔍 Open Image in New Tab</button>
                         </div>
                     </div>
                     <div class="diagram-viewport">
@@ -535,57 +557,54 @@ def render_loksewa_content(content_text: str):
                 </script>
 
                 <script>
-                    function saveAsImage(format) {{
-                        const container = document.getElementById('{container_id}');
-                        const svgEl = container.querySelector('.mermaid svg');
+                    function openDiagramWindow() {{
+                        const svgEl = document.querySelector('#{container_id} .mermaid svg');
                         if (!svgEl) return;
-                        
                         const svgData = new XMLSerializer().serializeToString(svgEl);
-                        
-                        if (format === 'svg') {{
-                            const blob = new Blob([svgData], {{type: 'image/svg+xml;charset=utf-8'}});
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = 'loksewa_model_diagram.svg';
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
+                        const canvas = document.createElement('canvas');
+                        const bbox = svgEl.getBoundingClientRect();
+                        canvas.width = Math.max(bbox.width, 600) * 2;
+                        canvas.height = Math.max(bbox.height, 300) * 2;
+                        const ctx = canvas.getContext('2d');
+                        const img = new Image();
+                        const svgBlob = new Blob([svgData], {{type: 'image/svg+xml;charset=utf-8'}});
+                        const url = URL.createObjectURL(svgBlob);
+                        img.onload = function() {{
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                             URL.revokeObjectURL(url);
-                        }} else {{
-                            const canvas = document.createElement('canvas');
-                            const bbox = svgEl.getBoundingClientRect();
-                            const scale = 2;
-                            canvas.width = Math.max(bbox.width, 600) * scale;
-                            canvas.height = Math.max(bbox.height, 350) * scale;
-                            const ctx = canvas.getContext('2d');
-                            
-                            const img = new Image();
-                            const blob = new Blob([svgData], {{type: 'image/svg+xml;charset=utf-8'}});
-                            const url = URL.createObjectURL(blob);
-                            
-                            img.onload = function() {{
-                                ctx.fillStyle = '#ffffff';
-                                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                URL.revokeObjectURL(url);
-                                
-                                const pngUrl = canvas.toDataURL('image/png');
-                                const a = document.createElement('a');
-                                a.href = pngUrl;
-                                a.download = 'loksewa_model_diagram.png';
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                            }};
-                            img.src = url;
-                        }}
+                            const w = window.open("");
+                            w.document.write('<title>Lok Sewa Diagram</title><body style="margin:0;display:flex;justify-content:center;background:#f1f5f9;"><img src="' + canvas.toDataURL() + '" style="max-width:100%;height:auto;box-shadow:0 4px 6px rgba(0,0,0,0.1);margin:20px;"/></body>');
+                        }};
+                        img.src = url;
                     }}
                 </script>
             </body>
             </html>
             """
             components.html(html_code, height=dyn_height, scrolling=True)
+            
+            # NATIVE STREAMLIT DOWNLOAD BUTTON (NO SANDBOX BLOCK)
+            col_save1, col_save2 = st.columns([1, 3])
+            with col_save1:
+                png_bytes = fetch_mermaid_png_bytes(mermaid_code)
+                if png_bytes:
+                    st.download_button(
+                        label=f"📸 Save Diagram #{diagram_count} as PNG",
+                        data=png_bytes,
+                        file_name=f"loksewa_diagram_{diagram_count}_{int(time.time())}.png",
+                        mime="image/png",
+                        key=f"native_png_dl_{diagram_count}_{int(time.time()*1000)%10000}"
+                    )
+                else:
+                    st.download_button(
+                        label=f"💾 Save Diagram #{diagram_count} Code (.mmd)",
+                        data=mermaid_code,
+                        file_name=f"diagram_{diagram_count}.mmd",
+                        mime="text/plain",
+                        key=f"native_mmd_dl_{diagram_count}_{int(time.time()*1000)%10000}"
+                    )
         else:
             if part.strip():
                 st.markdown(part)
@@ -668,24 +687,21 @@ def generate_loksewa_answer(client, question_text: str, marks: int, text_model: 
     QUESTION: {question_text}
     MARKS ALLOTTED: {marks} Marks
     
-    Comply strictly with the verified Government of Nepal baseline and format:
-    1. Concise Introduction (2-3 sentences: context, operational scope, importance)
-    2. Current Scenario & Sectoral Data Snapshot:
-       - Economic Survey 2080/81 & 2081/82: AGDP share (24.1% - 25.16%), Ag growth (3.05%-3.28%), GDP (Rs. 57.05 - 61.07 Kharba), GNI per capita (USD 1,456 - 1,517), Ag labor (62.4%-66.7%).
-       - MoALD: Historic paddy output (5.724M MT; yield 3.98-4.14 MT/ha), Maize (3.15M MT), Wheat (2.18M MT), fertilizer distribution (~4.25 Lakh MT).
-       - PQPMC Banned Pesticides: Exactly 27 banned (including Dec 2024 additions: Paraquat dichloride, Chlorpyrifos, Phorate); national average ~396 gm a.i./ha vs commercial pockets (1.5-2.5 kg/ha).
-       - SQCC: 700+ varieties, SRR (Paddy 24.5%, Wheat 22.8%, Maize 20.2%).
-       - If question is technical agronomy/protection/soil/horticulture, provide exact technical thresholds (ETLs, temperature/moisture requirements, critical soil nutrient levels).
-    3. Mermaid Diagram (NOT limited to linear graphs):
-       - If cyclic/closed-loop (nutrient cycles, pathogen cycle, seed multiplication, feedback loops), use cyclic syntax: A --> B --> C -->|Recycle/Feedback| A.
-       - If decision hierarchy/classification, use branching trees or subgraphs.
-       - Wrap labels in double quotes. Do NOT output meta comments like '(only 4 steps)'.
-    4. Policy, Legal & Institutional Linkage (Explicitly cite 16th Periodic Plan 2081/82-2085/86, Food Hygiene and Quality Act 2081, Agriculture Investment Decade 2081-2091, Pesticide Regulation 2081, or National Agriculture Policy 2081).
+    CRITICAL INSTRUCTION FOR SECTION 2 (Current Scenario & Sectoral Data Snapshot):
+    - Identify the specific discipline of this question (Soil Science, Plant Protection, Horticulture, Agronomy, Extension, or Macro/Policy).
+    - Provide ONLY 3 to 4 technical indicators strictly relevant to that discipline.
+    - DO NOT provide a general national macro table (do not mention GDP/Paddy/Pesticides if this is a soil question; do not mention fertilizer if this is an apple disease question).
+    
+    Ensure full structural compliance:
+    1. Concise Introduction (2-3 sentences)
+    2. Current Scenario & Sectoral Data Snapshot (Context-specific indicators ONLY)
+    3. Conceptual Diagram (Mermaid code: Cyclic, Branching, or Stepwise Flow)
+    4. Policy, Legal & Institutional Linkage (16th Plan, Food Hygiene Act 2081, Pesticides Reg 2081, etc.)
     5. Main Analytical Core (5-7 punchy points: Bold Heading -> Cause/Effect -> Practical Implication)
     6. Key Operational Challenges (4-5 points)
-    7. Actionable Way Forward (Federal, Provincial, and Local Government mandates)
-    8. Story-Based Mnemonic for Rapid Recall (1-2 sentence real-world narrative micro-story in ENGLISH connecting analytical points)
-    9. Strategic Conclusion
+    7. Actionable Way Forward (Federal, Provincial, Local roles)
+    8. Story-Based Mnemonic for Rapid Recall (English narrative story)
+    9. Strategic Conclusion & Quick-Recall Micro-Flowchart (1-2 sentences + EXACTLY 3-4 node `graph LR` Mermaid diagram)
     """
     for attempt in range(retries + 1):
         try:
@@ -713,25 +729,26 @@ if not groq_api_key and "GROQ_API_KEY" in st.secrets:
     groq_api_key = st.secrets["GROQ_API_KEY"]
 
 if not groq_api_key:
-    groq_api_key = st.sidebar.text_input("Enter Groq API Key", type="password", help="Get free key from console.groq.com")
+    groq_api_key = st.sidebar.text_input("Enter Groq API Key", type="password", help="Get key from console.groq.com")
 
 saved_count = len(st.session_state["saved_notes"])
-st.sidebar.markdown(f"### 📚 Saved Notes: **{saved_count}**")
+st.sidebar.markdown(f"### 📚 Revision Bank: **{saved_count}** Notes")
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "**Govt of Nepal Verified Publications:**\n"
-    "- MoF Economic Survey 2080/81 & 2081/82\n"
-    "- MoALD Krishi Diary & Stat Report\n"
-    "- PQPMC 27 Banned Pesticides (Dec 2024)\n"
-    "- 16th Periodic Plan (2081/82-2085/86)\n"
-    "- Food Hygiene & Quality Act 2081"
+    "**Contextual Domain Knowledge Active:**\n"
+    "• Soil Science (~52% acidic, ~45% low OM)\n"
+    "• Plant Protection (27 Banned, 396g a.i./ha)\n"
+    "• Horticulture (25-35% loss, 2.5-3L MT cold chain)\n"
+    "• Agronomy (Paddy 5.72M MT, SRR ~24.5%)\n"
+    "• Extension (1:1,500 ratio, 51 AKCs, 753 Locals)\n"
+    "• Macro (24.1-25.16% AGDP, Rs 61.07K GDP)"
 )
 
 # -------------------------------------------------------------
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Master Coach")
-st.caption("Official Publications Baseline | Multi-Type Diagrams (Cyclic/Branching/Linear) | 1-Click Diagram Export | Collective PDF Engine")
+st.caption("Context-Specific Technical Data | Native Diagram Saving | Conclusion Micro-Flowcharts | Collective PDF Engine")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -758,11 +775,11 @@ with tab1:
         image = Image.open(uploaded_file)
         
         with col_img:
-            st.image(image, caption="Uploaded Question Paper", use_container_width=True)
+            st.image(image, caption="Uploaded Paper", use_container_width=True)
             
         with col_act:
             if st.button("🔍 Extract Questions from Photo", type="primary", use_container_width=True):
-                with st.spinner("Extracting questions via Vision AI..."):
+                with st.spinner("Extracting questions cleanly..."):
                     try:
                         extracted_text = extract_questions_from_image(client, image, vision_model)
                         st.session_state["extracted_questions_raw"] = extracted_text
@@ -790,7 +807,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Answer for Selected Question", type="primary"):
-                with st.spinner("Preparing answer with official data, cyclic/branching diagrams, and memory stories..."):
+                with st.spinner("Generating answer with domain-specific technical data and micro-flowchart..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -899,7 +916,7 @@ with tab2:
     st.subheader("Type or Paste Exam Question")
     single_q = st.text_area(
         "Question:", 
-        placeholder="e.g., Explain the seed multiplication and certification system in Nepal. Analyze the role of SQCC, and illustrate the cycle from Breeder Seed to Certified Seed under federal governance. [10 marks]",
+        placeholder="e.g., Discuss the causes and management of citrus decline in the mid-hills of Nepal. What post-harvest strategies should be adopted? [10 marks]",
         height=100
     )
     col1, col2 = st.columns([1, 3])
@@ -908,9 +925,9 @@ with tab2:
         
     if st.button("🚀 Generate Answer", type="primary", key="btn_single"):
         if not single_q.strip():
-            st.warning("Please type a question.")
+            st.warning("Please enter a question.")
         else:
-            with st.spinner("Preparing answer with official data, cyclic/branching diagrams, and memory stories..."):
+            with st.spinner("Preparing answer with domain-specific technical data and micro-flowchart..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
