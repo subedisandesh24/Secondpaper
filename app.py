@@ -112,9 +112,9 @@ def clean_pdf_text(raw_text: str) -> str:
 
 def make_paragraph(text: str, style, fallback_style=None):
     """
-    FAILSAFE PARAGRAPH GENERATOR:
+    Failsafe paragraph generator:
     If ReportLab encounters a tag nesting mismatch, it intercepts the exception,
-    strips all tags, and renders clean plain text so the app NEVER crashes.
+    strips all tags, and renders clean plain text so the app never crashes.
     """
     try:
         return Paragraph(text, style)
@@ -200,7 +200,7 @@ def fetch_mermaid_png_bytes(mermaid_code: str):
     return None
 
 # -------------------------------------------------------------
-# PDF BUILDER 1: FULL MODEL ANSWER (100% CRASH-PROOF)
+# PDF BUILDER 1: FULL MODEL ANSWER
 # -------------------------------------------------------------
 def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
     styles = getSampleStyleSheet()
@@ -456,36 +456,39 @@ def generate_bulk_pdf_bytes(qa_list: list) -> bytes:
     return buffer.getvalue()
 
 # -------------------------------------------------------------
-# ZERO-PREMADE-DATA LOK SEWA SYSTEM PROMPT
+# DYNAMIC, ZERO-FILLER LOK SEWA SYSTEM PROMPT
 # -------------------------------------------------------------
 LOKSEWA_SYSTEM_PROMPT = (
     "You are an elite, highly rigorous Nepal Public Service Commission (Lok Sewa Aayog) Senior Evaluator for the "
     "Nepal Agricultural Service (Gazetted Third Class / रा.प. तृतीय श्रेणी: Agronomy, Horticulture, Plant Protection, "
     "Soil Science, Agri Extension, and Agricultural Economics).\n\n"
-    "STRICT DIRECTIVE: ZERO PRE-MADE DATA & ZERO COOKIE-CUTTER TEMPLATES:\n"
-    "1. Under NO circumstances should you repeat a fixed table of macroeconomic or generic indicators (like GDP, national grain totals, or pesticide counts) unless the question explicitly asks for them.\n"
-    "2. Every answer must be built from the ground up, tailored 100% to the question's specific discipline, command terms (e.g., Explain, Critically Evaluate, Differentiate, Describe, Formulate), and marks weightage.\n"
-    "3. All empirical figures, technical dosages, economic thresholds (ETL), incubation periods, CCE values, chemical active ingredients, NARC varietal names, or legal Acts cited MUST be directly relevant to that specific subject matter.\n\n"
+    "CRITICAL CONSTRAINTS ON PRESENTATION & COHERENCE:\n"
+    "1. ABSOLUTE PROHIBITION ON WORD COUNTS: Do NOT display, calculate, or mention word counts, character counts, "
+    "or estimated writing times anywhere in the generated output.\n"
+    "2. MANDATORY COHERENCE & PARAGRAPH LINKAGE: Every paragraph and section MUST be connected with clear transitional "
+    "linkages. Never output isolated, disjointed bullet lists or abrupt headings. The narrative must flow organically:\n"
+    "   * Concept to Field Context: Connect the conceptual definition directly to its biological or socioeconomic importance in Nepal.\n"
+    "   * Diagram to Technical Analysis: Lead the reader smoothly from the visual flowchart into the detailed core mechanisms.\n"
+    "   * Analysis to Federal Challenges: Show how field-level technical operations encounter structural bottlenecks across Federal, Provincial, and Local tiers.\n"
+    "   * Challenges to Strategic Solutions: Transition from operational bottlenecks into actionable institutional remedies and policy targets.\n"
+    "3. ZERO PRE-MADE FILLER DATA: Do NOT regurgitate a fixed set of general macro indicators (like national GDP or general cereal lists) unless explicitly asked. "
+    "Every empirical figure, threshold, rate, chemical dosage, or legal Act cited must be derived dynamically and be strictly relevant to the question's specific domain.\n\n"
     "DYNAMIC SUBJECT-MATTER RULES:\n"
-    "- If Plant Pathology / Entomology: Focus strictly on etiology, taxonomy, symptoms, infection/life cycle, ETLs, and precise cultural, biological, and chemical IPM dosages (e.g., ml/L, g/L, or kg/ha). Diagram must be an Infection Cycle or IPM Decision Tree.\n"
-    "- If Agronomy / Seed Science: Focus on agro-ecology, certified seed classes, varietal release mechanisms (SQCC), land preparation, sowing geometry, nutrient splitting, and Seed Replacement Rate (SRR). Diagram must be a Cultivation SOP or Seed Multiplication Loop.\n"
-    "- If Soil Science: Focus on soil chemical/physical properties, acidity correction dynamics, CCE calculation, nutrient interactions, Soil Health Card diagnostics, and fertilizer efficiency. Diagram must be a Nutrient Transformation or Liming Cycle.\n"
-    "- If Horticulture / Post-Harvest: Focus on rootstocks, canopy architecture, chilling requirements, maturity indices, sorting, cold-chain preservation, and shelf-life extension. Diagram must be a Value Addition or Post-Harvest Handling Process.\n"
-    "- If Agricultural Extension & Policy: Focus on constitutional allocations (Schedules 5 to 9), institutional interfaces (Federal DoA, Provincial AKC, Local 753 units), technology adoption models, and federal coordination. Diagram must be an Institutional Service Delivery Architecture.\n\n"
-    "MERMAID SYNTAX RULES (GUARANTEED ERROR-FREE):\n"
+    "- If Plant Pathology / Entomology: Focus on etiology, symptoms, infection/life cycle, ETL thresholds, and precise IPM chemical/bio-dosages (g/L or kg/ha). Diagram: Infection Cycle or IPM Decision Tree.\n"
+    "- If Agronomy / Seed Science: Focus on agro-ecology, certified seed classes, varietal release (SQCC), land preparation, sowing geometry, nutrient splitting, and Seed Replacement Rate (SRR). Diagram: Cultivation SOP or Seed Multiplication Loop.\n"
+    "- If Soil Science: Focus on soil chemical/physical properties, acidity dynamics, CCE calculation, nutrient interactions, Soil Health Card diagnostics, and fertilizer efficiency. Diagram: Nutrient Transformation or Liming Protocol.\n"
+    "- If Horticulture / Post-Harvest: Focus on rootstocks, canopy architecture, chilling hours, maturity indices, sorting, cold-chain preservation, and shelf-life extension. Diagram: Value Addition or Post-Harvest Preservation Flow.\n"
+    "- If Agricultural Extension & Policy: Focus on constitutional allocations (Schedules 5-9), three-tier institutional interfaces (Federal DoA, Provincial AKC, Local 753 units), technology adoption, and federal coordination. Diagram: Institutional Service Delivery Architecture.\n\n"
+    "MERMAID SYNTAX RULES (ZERO SYNTAX ERRORS):\n"
     "- Always start the process diagram with `flowchart TD`.\n"
     "- Use standard rectangular nodes: A[\"Stage Title<br/>- Technical detail 1<br/>- Technical detail 2\"].\n"
     "- Do NOT use round brackets (), HTML tags like <b>, bullets like •, or raw ampersands & inside node text. Use 'and'.\n"
-    "- The diagram must clearly portray the core technical mechanism of the question.\n\n"
+    "- Make the diagram directly portray the core technical mechanism of the question.\n\n"
     "STRICTLY CONTEXTUAL CONCLUSION:\n"
-    "- Frame a contextual strategic vision directly answering the question's core problem.\n"
-    "- Propose an actionable, field-level solution viable under Nepal's federal reality.\n"
-    "- Conclude by linking directly to the specific official target governing that topic (e.g., 16th Plan target, ADS 2015-2035 target, National Seed Vision target, Food Hygiene Act 2081, or SDG-2).\n"
-    "- Finish with an EXACTLY 3-to-4 node horizontal flowchart (`flowchart LR`) showing: `[Strategic Concept] --> [Field Action] --> [Target Realized]`.\n\n"
-    "TIME & MARKS CALIBRATION:\n"
-    "- 5 Marks: ~180-250 words, concise, focused, 1 short diagram.\n"
-    "- 10 Marks: ~450-650 words, comprehensive, technical core, main diagram + conclusion micro-flowchart.\n"
-    "- 15 Marks: ~750-950 words, in-depth analytical evaluation, multi-tier operational details."
+    "- Synthesize a strategic vision directly answering the question's core problem.\n"
+    "- Formulate an actionable field solution viable under Nepal's federal reality.\n"
+    "- Conclude with an explicit linkage to the official target governing that topic (e.g., 16th Plan target, ADS 2015-2035 target, National Seed Vision target, Food Hygiene Act 2081, or SDG-2).\n"
+    "- Finish with an EXACTLY 3-to-4 node horizontal flowchart (`flowchart LR`) showing: `[Strategic Concept] --> [Field Action] --> [Target Realized]`."
 )
 
 # -------------------------------------------------------------
@@ -681,22 +684,23 @@ def extract_questions_from_image(client, image: Image.Image, vision_model: str):
 
 def generate_loksewa_answer(client, question_text: str, marks: int, text_model: str, retries: int = 2):
     user_prompt = f"""
-    Write a high-scoring Nepal Lok Sewa examination model answer for:
+    Write an elite Nepal Lok Sewa examination model answer for:
     
     QUESTION: {question_text}
     MARKS ALLOTTED: {marks} Marks
     
-    DYNAMIC INSTRUCTIONS (ZERO PRE-MADE FILLER DATA):
-    1. Tailor the entire answer architecture, headings, and technical depth strictly to this specific question.
-    2. Data Snapshot: Do NOT include generic national GDP or general cereal lists unless the question asks for it. Provide ONLY 3 to 4 technical parameters, chemical dosages, threshold metrics, or specific empirical data directly relevant to this exact subject.
-    3. Authentic Legal & Institutional Context: Cite the exact parent Acts, Regulations, and public agencies (e.g., MoALD, NARC, DoA, PQPMC, SQCC, DFTQC, Local Governments) governing this topic.
-    4. Technical Diagram: Design an authentic process model, life cycle, decision key, or institutional flow strictly matching this topic. Start with `flowchart TD`, use rectangular nodes: A["Stage Title<br/>- Detail 1<br/>- Detail 2"], and do NOT use unescaped brackets or symbols.
-    5. Main Analytical Core: Provide sharp, officer-grade technical points with headings, cause-and-effect explanations, and field-level applications in Nepal.
-    6. Operational Challenges & Actionable Way Forward: Specific to this topic's reality under Nepal's federal structure.
-    7. Rapid Recall Mnemonic: A 1-2 sentence real-world narrative micro-story in English connecting the analytical core.
-    8. Strategic Conclusion:
-       - Contextual Strategy addressing the question directly.
-       - Practical field solution viable in Nepal.
+    CRITICAL QUALITY & PRESENTATION MANDATES:
+    1. NO WORD COUNTS: Do NOT display, count, or mention word counts anywhere in the answer.
+    2. SEAMLESS PARAGRAPH LINKAGE: Every section and paragraph must connect logically to the next using analytical transitional phrases. Ensure that the technical concepts flow smoothly into field practices, operational challenges, federal governance mandates, and policy solutions.
+    3. ZERO PRE-MADE FILLER DATA: Do NOT provide generic national macroeconomic tables. Provide ONLY 3 to 4 domain-specific technical figures, chemical dosages, threshold metrics, or empirical data directly answering this topic.
+    4. AUTHENTIC LEGAL & INSTITUTIONAL BASELINE: Dynamically cite the exact parent Acts, Regulations, and public agencies (MoALD, NARC, DoA, PQPMC, SQCC, DFTQC, Local Governments) governing this subject.
+    5. TECHNICAL DIAGRAM: Construct an authentic process model, life cycle, decision key, or institutional flow strictly matching this topic. Start with `flowchart TD`, use rectangular nodes: A["Stage Title<br/>- Detail 1<br/>- Detail 2"], and do NOT use unescaped brackets or symbols.
+    6. MAIN ANALYTICAL CORE: Sharp, officer-grade technical points with bold headings, cause-and-effect explanations, and field-level applications in Nepal.
+    7. OPERATIONAL CHALLENGES & FEDERAL WAY FORWARD: Specific to this topic's reality under Nepal's three-tier federal structure.
+    8. RAPID RECALL MNEMONIC: A 1-2 sentence real-world narrative micro-story in English connecting the analytical core points.
+    9. STRATEGIC CONCLUSION:
+       - Contextual Strategy directly addressing the core question.
+       - Practical field solution viable under federal implementation.
        - Explicit linkage to the official target governing this topic (16th Plan, ADS, Seed Vision, Food Hygiene Act 2081, or SDG-2).
        - End with an EXACTLY 3-4 node horizontal flowchart (`flowchart LR`): `[Topic Strategy] --> [Actionable Solution] --> [Policy Target Attained]`.
     """
@@ -732,7 +736,8 @@ st.sidebar.markdown("---")
 st.sidebar.info(
     "**Dynamic Evaluation Engine:**\n"
     "• Zero Hardcoded / Pre-made Filler Data\n"
-    "• Discipline-Specific Technical Models\n"
+    "• Cohesive Paragraph Linkages & Flow\n"
+    "• Hidden Word Count Metadata\n"
     "• Syntax-Safe Mermaid Flowcharts\n"
     "• Question-Linked Policy Targets\n"
     "• Diagrams-Only Visual Revision PDF"
@@ -742,7 +747,7 @@ st.sidebar.info(
 # MAIN APP BODY
 # -------------------------------------------------------------
 st.title("🌾 Lok Sewa Agri Officer Dynamic Coach")
-st.caption("Zero-Template Adaptive Engine | Topic-Specific Technical Diagrams | Direct Policy Linkages | Diagrams-Only PDF Booklet")
+st.caption("Cohesive Paragraph Linkages | Discipline-Specific Technical Models | Direct Policy Linkages | Diagrams-Only PDF Booklet")
 
 if not groq_api_key:
     st.warning("👈 Please enter your Groq API Key in the left sidebar to start.")
@@ -794,7 +799,7 @@ with tab1:
                 q_marks = st.selectbox("Marks:", [5, 10, 15], index=1, key="tab1_single_marks")
                 
             if st.button("🚀 Generate Dynamic Answer", type="primary"):
-                with st.spinner("Evaluating question domain and generating custom answer..."):
+                with st.spinner("Evaluating question domain and generating cohesive answer..."):
                     try:
                         ans = generate_loksewa_answer(client, selected_q, q_marks, text_model)
                         st.session_state["current_ans"] = ans
@@ -885,7 +890,7 @@ with tab2:
         if not single_q.strip():
             st.warning("Please enter a question.")
         else:
-            with st.spinner("Analyzing question domain and crafting custom model answer..."):
+            with st.spinner("Analyzing question domain and crafting custom cohesive answer..."):
                 try:
                     ans = generate_loksewa_answer(client, single_q, s_marks, text_model)
                     st.session_state["single_ans"] = ans
