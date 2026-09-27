@@ -34,7 +34,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Pure in-memory session: Automatically wiped clean when the browser window closes
+# Pure in-memory session: Automatically wiped clean when the browser tab closes
 if "saved_notes" not in st.session_state:
     st.session_state["saved_notes"] = []
 
@@ -66,26 +66,65 @@ def setup_pdf_font():
 setup_pdf_font()
 
 def clean_pdf_text(raw_text: str) -> str:
-    """Cleans Unicode characters to avoid '???' artifacts in ReportLab."""
+    """
+    Cleans Unicode punctuation, emojis, and safely balances Markdown bold/italics
+    to prevent ReportLab's paraparser from throwing 'saw </x> instead of expected </y>'.
+    """
     if not raw_text:
         return ""
-    text = raw_text
+    text = str(raw_text)
+
+    # 1. Map Unicode punctuation and arrows
     text = text.replace('—', ' - ').replace('–', ' - ').replace('―', ' - ')
     text = text.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
     text = text.replace('→', ' -> ').replace('←', ' <- ').replace('↑', ' (up) ').replace('↓', ' (down) ')
     text = text.replace('≥', '>=').replace('≤', '<=').replace('≠', '!=').replace('≈', '~')
     text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
-    text = re.sub(r'[📖🌾📌📝⭐🚀🔍📋📚🎉&bull;•🔄🌳🎯💡🔬🧪🖼️]', '', text)
+    text = re.sub(r'[📖🌾📌📝⭐🚀🔍📋📚🎉•🔄🌳🎯💡🔬🧪🖼️]', '', text)
     text = text.replace('\u00a0', ' ').replace('\u200b', '')
 
-    escaped = html.escape(text)
-    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
-    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
-    escaped = escaped.replace("-&gt;", " &rarr; ")
+    # 2. Placeholders for clean nesting (avoids crossed tags)
+    def rep_bi(m): return f"___BI_START___{m.group(1)}___BI_END___"
+    def rep_b(m): return f"___B_START___{m.group(1)}___B_END___"
+    def rep_i(m): return f"___I_START___{m.group(1)}___I_END___"
+
+    text = re.sub(r'\*\*\*(.+?)\*\*\*', rep_bi, text)
+    text = re.sub(r'\*\*(.+?)\*\*', rep_b, text)
+    text = re.sub(r'(?<!\*)\*([^\*\n\s][^\*\n]*?[^\*\n\s]|[^\*\n\s])\*(?!\*)', rep_i, text)
+
+    # 3. Strip any stray raw HTML tags that ReportLab does not support
+    text = re.sub(r'<(?!/?(b|i|u|font|br/?)(\s|>))[^>]*>', '', text)
+
+    # 4. Escape XML entities
+    text = html.escape(text)
+
+    # 5. Restore valid ReportLab tags
+    text = text.replace('___BI_START___', '<b><i>').replace('___BI_END___', '</i></b>')
+    text = text.replace('___B_START___', '<b>').replace('___B_END___', '</b>')
+    text = text.replace('___I_START___', '<i>').replace('___I_END___', '</i>')
+
+    # 6. Entity cleanups
+    text = text.replace('&amp;rarr;', '&rarr;').replace('-&gt;', ' &rarr; ')
 
     if PDF_FONT == 'Helvetica':
-        return escaped.encode('latin-1', 'ignore').decode('latin-1')
-    return escaped
+        return text.encode('latin-1', 'ignore').decode('latin-1')
+    return text
+
+def make_paragraph(text: str, style, fallback_style=None):
+    """
+    FAILSAFE PARAGRAPH GENERATOR:
+    If ReportLab encounters a tag nesting mismatch, it intercepts the exception,
+    strips all tags, and renders clean plain text so the app NEVER crashes.
+    """
+    try:
+        return Paragraph(text, style)
+    except Exception:
+        plain_text = re.sub(r'<[^>]+>', '', str(text))
+        plain_text = html.escape(html.unescape(plain_text))
+        try:
+            return Paragraph(plain_text, fallback_style or style)
+        except Exception:
+            return Paragraph("Content rendering error in block.", fallback_style or style)
 
 # -------------------------------------------------------------
 # TWO-PASS NUMBERED CANVAS (PAGE X OF Y)
@@ -161,7 +200,7 @@ def fetch_mermaid_png_bytes(mermaid_code: str):
     return None
 
 # -------------------------------------------------------------
-# PDF BUILDER 1: FULL MODEL ANSWER
+# PDF BUILDER 1: FULL MODEL ANSWER (100% CRASH-PROOF)
 # -------------------------------------------------------------
 def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_num: int = None):
     styles = getSampleStyleSheet()
@@ -180,8 +219,8 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
     story = []
     q_prefix = f"QUESTION #{q_num:02d}" if q_num else "QUESTION"
     card_data = [
-        [Paragraph(f"<b>{q_prefix} &nbsp;|&nbsp; WEIGHTAGE: {marks} MARKS</b>", q_badge_style)],
-        [Paragraph(clean_pdf_text(question), q_title_style)]
+        [make_paragraph(f"<b>{q_prefix} &nbsp;|&nbsp; WEIGHTAGE: {marks} MARKS</b>", q_badge_style)],
+        [make_paragraph(clean_pdf_text(question), q_title_style)]
     ]
     q_card = Table(card_data, colWidths=[content_width])
     q_card.setStyle(TableStyle([
@@ -225,18 +264,18 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
                         display_h = 270
                         display_w = (w / h) * display_h
                     img_stream.seek(0)
-                    story.append(Paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DT', fontName=PDF_FONT_BOLD, fontSize=8, textColor=colors.HexColor('#166534'), spaceAfter=4)))
+                    story.append(make_paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DT', fontName=PDF_FONT_BOLD, fontSize=8, textColor=colors.HexColor('#166534'), spaceAfter=4)))
                     story.append(RLImage(img_stream, width=display_w, height=display_h))
                     story.append(Spacer(1, 6))
                     continue
                 except Exception:
                     pass
 
-            diag_elements = [Paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DTF', fontName=PDF_FONT_BOLD, fontSize=8, textColor=colors.HexColor('#166534'), spaceAfter=3))]
+            diag_elements = [make_paragraph(f"<b>{diag_label}:</b>", ParagraphStyle('DTF', fontName=PDF_FONT_BOLD, fontSize=8, textColor=colors.HexColor('#166534'), spaceAfter=3))]
             for m_line in mermaid_lines:
                 clean_l = m_line.replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' - ').strip()
                 if clean_l and not clean_l.lower().startswith(('graph', 'flowchart', 'subgraph', 'end', '%%')):
-                    diag_elements.append(Paragraph(f"&bull;&nbsp;{clean_pdf_text(clean_l)}", diag_row_style))
+                    diag_elements.append(make_paragraph(f"&bull;&nbsp;{clean_pdf_text(clean_l)}", diag_row_style))
             
             flow_card = Table([[diag_elements]], colWidths=[content_width])
             flow_card.setStyle(TableStyle([
@@ -266,9 +305,9 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
                     p_row = []
                     for c_txt in row:
                         if r_idx == 0:
-                            p_row.append(Paragraph(f"<b>{clean_pdf_text(c_txt)}</b>", tbl_hdr_style))
+                            p_row.append(make_paragraph(f"<b>{clean_pdf_text(c_txt)}</b>", tbl_hdr_style))
                         else:
-                            p_row.append(Paragraph(clean_pdf_text(c_txt), tbl_cell_style))
+                            p_row.append(make_paragraph(clean_pdf_text(c_txt), tbl_cell_style))
                     t_data.append(p_row)
                     
                 table_obj = Table(t_data, colWidths=[col_w] * len(table_rows[0]))
@@ -286,7 +325,7 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
             in_table = False
 
         if "memory story" in line.lower() or "mnemonic" in line.lower():
-            story_card = Table([[Paragraph(clean_pdf_text(line), story_text_style)]], colWidths=[content_width])
+            story_card = Table([[make_paragraph(clean_pdf_text(line), story_text_style)]], colWidths=[content_width])
             story_card.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fffbeb')),
                 ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#fde68a')),
@@ -298,14 +337,14 @@ def build_pdf_story_for_qa(question: str, marks: int, answer_markdown: str, q_nu
 
         if line.startswith("#"):
             clean_h = re.sub(r"^#+\s*", "", line)
-            story.append(Paragraph(f"<b>{clean_pdf_text(clean_h).upper()}</b>", h1_style))
+            story.append(make_paragraph(f"<b>{clean_pdf_text(clean_h).upper()}</b>", h1_style))
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e2e8f0'), spaceBefore=1, spaceAfter=3))
-        elif line.startswith(("-", "*")) or (len(line) > 2 and line[0].isdigit() and line[1] in [".", ")"]):
-            clean_bullet = re.sub(r"^[-*]\s*", "", line)
-            clean_bullet = re.sub(r"^\d+[\.\)]\s*", "", clean_bullet)
-            story.append(Paragraph(f"&bull;&nbsp;&nbsp;{clean_pdf_text(clean_bullet)}", bullet_style))
+        elif re.match(r'^[-*]\s+', line) or re.match(r'^\d+[\.\)]\s+', line):
+            clean_bullet = re.sub(r'^[-*]\s+', '', line)
+            clean_bullet = re.sub(r'^\d+[\.\)]\s+', '', clean_bullet)
+            story.append(make_paragraph(f"&bull;&nbsp;&nbsp;{clean_pdf_text(clean_bullet)}", bullet_style))
         else:
-            story.append(Paragraph(clean_pdf_text(line), body_style))
+            story.append(make_paragraph(clean_pdf_text(line), body_style))
 
     return story
 
@@ -322,8 +361,8 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
 
     title_style = ParagraphStyle('DTitle', fontName=PDF_FONT_BOLD, fontSize=13.5, leading=17, textColor=colors.HexColor('#1b5e20'), alignment=1)
     sub_style = ParagraphStyle('DSub', fontName=PDF_FONT, fontSize=8.5, leading=12, textColor=colors.HexColor('#475569'), alignment=1)
-    story.append(Paragraph("<b>LOK SEWA AGRI OFFICER - TECHNICAL DIAGRAM CHEAT SHEET</b>", title_style))
-    story.append(Paragraph("Context-Specific Process Models & Target-Linked Conclusion Micro-Flows", sub_style))
+    story.append(make_paragraph("<b>LOK SEWA AGRI OFFICER - TECHNICAL DIAGRAM CHEAT SHEET</b>", title_style))
+    story.append(make_paragraph("Context-Specific Process Models & Target-Linked Conclusion Micro-Flows", sub_style))
     story.append(Spacer(1, 10))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#1b5e20'), spaceBefore=2, spaceAfter=12))
 
@@ -332,7 +371,7 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
         ans_text = item.get("answer", "")
         
         q_banner = Table([
-            [Paragraph(f"<b>QUESTION #{idx+1:02d}:</b> {clean_pdf_text(q_text)}", ParagraphStyle('QBH', fontName=PDF_FONT_BOLD, fontSize=9, leading=12.5, textColor=colors.HexColor('#0f172a')))]
+            [make_paragraph(f"<b>QUESTION #{idx+1:02d}:</b> {clean_pdf_text(q_text)}", ParagraphStyle('QBH', fontName=PDF_FONT_BOLD, fontSize=9, leading=12.5, textColor=colors.HexColor('#0f172a')))]
         ], colWidths=[content_width])
         q_banner.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f1f5f9')),
@@ -345,7 +384,7 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
         mermaid_blocks = re.findall(rf"{TRIPLE_BACKTICKS}mermaid\s*([\s\S]*?){TRIPLE_BACKTICKS}", ans_text)
         
         if not mermaid_blocks:
-            story.append(Paragraph("<i>No visual diagram was attached for this item.</i>", ParagraphStyle('ND', fontName=PDF_FONT, fontSize=8, textColor=colors.gray)))
+            story.append(make_paragraph("<i>No visual diagram was attached for this item.</i>", ParagraphStyle('ND', fontName=PDF_FONT, fontSize=8, textColor=colors.gray)))
             story.append(Spacer(1, 10))
         else:
             for d_idx, raw_code in enumerate(mermaid_blocks):
@@ -353,7 +392,7 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
                 is_conclusion = "flowchart lr" in m_code.lower() or "graph lr" in m_code.lower() or len(m_code.strip().split('\n')) <= 6
                 label = "🎯 Conclusion Micro-Flowchart (Quick Recall)" if is_conclusion else f"🌾 Diagram {d_idx+1}: Topic Process Architecture"
                 
-                story.append(Paragraph(f"<b>{label}</b>", ParagraphStyle('DH', fontName=PDF_FONT_BOLD, fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4)))
+                story.append(make_paragraph(f"<b>{label}</b>", ParagraphStyle('DH', fontName=PDF_FONT_BOLD, fontSize=8.5, textColor=colors.HexColor('#166534'), spaceAfter=4)))
                 
                 png_bytes = fetch_mermaid_png_bytes(m_code)
                 if png_bytes:
@@ -377,7 +416,7 @@ def generate_diagrams_only_pdf_bytes(qa_list: list) -> bytes:
                 for line in m_code.strip().split('\n'):
                     clean_l = line.replace("[", "").replace("]", "").replace('"', '').replace('<br/>', ' - ').strip()
                     if clean_l and not clean_l.lower().startswith(('graph', 'flowchart', 'subgraph', 'end')):
-                        steps_data.append(Paragraph(f"&bull;&nbsp;{clean_pdf_text(clean_l)}", ParagraphStyle('FST', fontName=PDF_FONT, fontSize=8, leading=11)))
+                        steps_data.append(make_paragraph(f"&bull;&nbsp;{clean_pdf_text(clean_l)}", ParagraphStyle('FST', fontName=PDF_FONT, fontSize=8, leading=11)))
                 
                 if steps_data:
                     card = Table([[steps_data]], colWidths=[content_width])
